@@ -9,6 +9,18 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
+
+static void PrintOdbcError(SQLSMALLINT handleType, SQLHANDLE handle)
+{
+    SQLCHAR state[6], msg[256];
+    SQLINTEGER native;
+    SQLSMALLINT len;
+
+    if (SQLGetDiagRec(handleType, handle, 1, state, &native, msg, sizeof(msg), &len) == SQL_SUCCESS) {
+        printf("ODBC Error [%s] %ld: %s\n", state, (long)native, msg);
+    }
+}
 
 static void EscapeSql(const char *src, char *dst, size_t dstSize)
 {
@@ -31,7 +43,20 @@ static bool ExecSQL(SQLHDBC dbc, const char *sql)
     SQLHSTMT stmt = SQL_NULL_HSTMT;
     if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt))) return false;
 
+    /* Prevent UI freeze if server waits on a lock/network: limit query execution time. */
+    {
+        SQLULEN timeoutSec = 5;
+        (void)SQLSetStmtAttr(stmt, SQL_ATTR_QUERY_TIMEOUT, (SQLPOINTER)(uintptr_t)timeoutSec, 0);
+    }
+
     SQLRETURN r = SQLExecDirect(stmt, (SQLCHAR*)sql, SQL_NTS);
+
+    if (!SQL_SUCCEEDED(r)) {
+        PrintOdbcError(SQL_HANDLE_STMT, stmt);
+        /* Optional: uncomment if you want to see the SQL that failed */
+        /* printf("SQL Failed: %s\n", sql); */
+    }
+
     SQLFreeHandle(SQL_HANDLE_STMT, stmt);
     return SQL_SUCCEEDED(r);
 }
@@ -43,17 +68,26 @@ bool DbTestDrive_LoadAll(void *dbcVoid, TestDrive *out, int outCap, int *outCoun
 
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
 
-    const char *sql =
-        "SELECT TestDriveID, MobilID, KaryawanID, PelangganID, "
-        "CONVERT(VARCHAR(16), Tanggal_TestDrive, 23) AS Tanggal, "
-        "Status "
-        "FROM dbo.TestDrive "
-        "ORDER BY ID";
+    /* Limit rows at SQL level so reload doesn't stall if table grows large. */
+    char sql[512];
+    snprintf(sql, sizeof(sql),
+             "SELECT TOP (%d) TestDriveID, MobilID, KaryawanID, PelangganID, "
+             "CONVERT(VARCHAR(16), Tanggal_TestDrive, 23) AS Tanggal, "
+             "Status "
+             "FROM dbo.TestDrive "
+             "ORDER BY ID DESC",
+             outCap);
 
     SQLHSTMT stmt = SQL_NULL_HSTMT;
     if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt))) return false;
 
+    {
+        SQLULEN timeoutSec = 5;
+        (void)SQLSetStmtAttr(stmt, SQL_ATTR_QUERY_TIMEOUT, (SQLPOINTER)(uintptr_t)timeoutSec, 0);
+    }
+
     if (!SQL_SUCCEEDED(SQLExecDirect(stmt, (SQLCHAR*)sql, SQL_NTS))) {
+        PrintOdbcError(SQL_HANDLE_STMT, stmt);
         SQLFreeHandle(SQL_HANDLE_STMT, stmt);
         return false;
     }

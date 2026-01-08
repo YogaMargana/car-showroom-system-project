@@ -39,13 +39,13 @@ void UITextBoxDraw(UITextBox *tb, int fontSize) {
     Vector2 m = GetMousePosition();
     bool hover = CheckCollisionPointRec(m, tb->bounds);
 
-    Color bg;
-    if (tb->active) bg = (Color){240, 240, 240, 255};
-    else if (hover) bg = (Color){220, 220, 220, 255};
-    else bg = (Color){0, 0, 0, 0};
+    Color bg = tb->active ? (Color){255, 255, 255, 255}
+              : hover ? (Color){245, 245, 245, 255}
+                      : (Color){235, 235, 235, 255};
 
-    if (bg.a > 0) DrawRectangleRec(tb->bounds, bg);
-    DrawRectangleLines((int)tb->bounds.x, (int)tb->bounds.y, (int)tb->bounds.width, (int)tb->bounds.height, WHITE);
+    // Always draw a visible box (fix: previously transparent + white border could be invisible on white panels)
+    DrawRectangleRec(tb->bounds, bg);
+    DrawRectangleLines((int)tb->bounds.x, (int)tb->bounds.y, (int)tb->bounds.width, (int)tb->bounds.height, BLACK);
 
     char display[256] = {0};
     if (tb->passwordMode) {
@@ -57,7 +57,7 @@ void UITextBoxDraw(UITextBox *tb, int fontSize) {
         strncpy(display, tb->buffer, sizeof(display) - 1);
     }
  
-    Color textColor = (tb->active || hover) ? BLUE : WHITE;
+    Color textColor = tb->active ? BLUE : BLACK;
     DrawText(display, (int)tb->bounds.x + 10, (int)tb->bounds.y + 10, fontSize, textColor);
 
     if (tb->active) {

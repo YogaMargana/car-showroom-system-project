@@ -58,7 +58,7 @@ bool DbLookup_LoadMobilList(void *dbcVoid, LookupItem *out, int outCap, int *out
     if (!dbcVoid) return false;
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
     const char *sql =
-        "SELECT MobilID, NamaMobil "
+        "SELECT RTRIM(MobilID), RTRIM(NamaMobil) "
         "FROM dbo.Mobil ORDER BY ID";
     return QueryTwoCols(dbc, sql, out, outCap, outCount, "");
 }
@@ -68,7 +68,7 @@ bool DbLookup_LoadCustomerList(void *dbcVoid, LookupItem *out, int outCap, int *
     if (!dbcVoid) return false;
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
     const char *sql =
-        "SELECT PelangganID, Nama "
+        "SELECT RTRIM(PelangganID), RTRIM(Nama) "
         "FROM dbo.Pelanggan ORDER BY ID";
     return QueryTwoCols(dbc, sql, out, outCap, outCount, "");
 }
@@ -78,7 +78,7 @@ bool DbLookup_LoadSalesEmployeeList(void *dbcVoid, LookupItem *out, int outCap, 
     if (!dbcVoid) return false;
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
     const char *sql =
-        "SELECT KaryawanID, Nama "
+        "SELECT RTRIM(KaryawanID), RTRIM(Nama) "
         "FROM dbo.Karyawan "
         "WHERE Posisi='Sales' "
         "ORDER BY ID";

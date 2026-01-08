@@ -44,7 +44,7 @@ static char gOrigKaryawanID[16] = "";
 static char gOrigTanggal[16] = "";
 
 /* Status select (left/right) */
-static const char *kStatuses[] = {"Schedule", "On Going", "Success"};
+static const char *kStatuses[] = {"Scheduled", "Ongoing", "Finished"};
 static const int kStatusCount = 3;
 static int gStatusIndex = 0;
 
@@ -55,7 +55,7 @@ static UITextBox tbTableSearch;
 static char gTableSearch[64] = "";
 
 /* Status filter dropdown (table) */
-static const char *kStatusFilterItems[] = {"All", "Schedule", "On Going", "Success"};
+static const char *kStatusFilterItems[] = {"All", "Scheduled", "Ongoing", "Finished"};
 static const int kStatusFilterCount = 4;
 static int gStatusFilterIndex = 0;
 static bool gStatusFilterOpen = false;
@@ -72,6 +72,7 @@ static int gNeedReload = 1;
 typedef enum {
     MODAL_NONE = 0,
     MODAL_ERR_INPUT,
+    MODAL_ERR_DB,
     MODAL_CONFIRM_DELETE
 } ModalType;
 
@@ -93,6 +94,38 @@ static int ClampInt(int v, int lo, int hi)
     if (v < lo) return lo;
     if (v > hi) return hi;
     return v;
+}
+
+static void TrimInPlace(char *s)
+{
+    if (!s) return;
+
+    int start = 0;
+    while (s[start] && isspace((unsigned char)s[start])) start++;
+
+    int end = (int)strlen(s);
+    while (end > start && isspace((unsigned char)s[end - 1])) end--;
+
+    if (start > 0)
+        memmove(s, s + start, (size_t)(end - start));
+
+    s[end - start] = '\0';
+}
+
+static int IdEqualsTrim(const char *a, const char *b)
+{
+    char aa[32];
+    char bb[32];
+
+    strncpy(aa, a ? a : "", sizeof(aa) - 1);
+    aa[sizeof(aa) - 1] = '\0';
+    strncpy(bb, b ? b : "", sizeof(bb) - 1);
+    bb[sizeof(bb) - 1] = '\0';
+
+    TrimInPlace(aa);
+    TrimInPlace(bb);
+
+    return strcmp(aa, bb) == 0;
 }
 
 static void CloseAllPickers(void)
@@ -192,14 +225,8 @@ static int StrContainsI(const char *hay, const char *needle)
 static int IsIdInList(const char *id, const LookupItem *list, int count)
 {
     if (!id || id[0] == '\0') return 0;
-
-    char tmp[32];
-    strncpy(tmp, id, sizeof(tmp)-1);
-    tmp[sizeof(tmp)-1] = '\0';
-    TrimInPlace(tmp);
-
     for (int i = 0; i < count; i++) {
-        if (StrEqI(tmp, list[i].id)) return 1;
+        if (IdEqualsTrim(id, list[i].id)) return 1;
     }
     return 0;
 }
@@ -405,45 +432,24 @@ static int HasChanged(const char *now, const char *orig)
 
 static int ValidateForm(int requireFutureDate, int enforceSalesOnly)
 {
-    int isEdit = (gSelected >= 0);
+    TrimInPlace(gMobilID);
+    TrimInPlace(gKaryawanID);
+    TrimInPlace(gPelangganID);
+    TrimInPlace(gTanggal);
 
-    int requireFutureDate = 1;      // default untuk ADD
-    int enforceSalesOnly  = 1;      // default untuk ADD
+    /* Must be selected from lists */
+    if (!IsIdInList(gMobilID, gMobils, gMobilCount)) return 0;
+    if (!IsIdInList(gPelangganID, gCustomers, gCustomerCount)) return 0;
+    /* Sales ID: always required; for legacy rows we only enforce Sales-role when the field is changed */
+    if (!gKaryawanID[0]) return 0;
+    if (enforceSalesOnly && !IsIdInList(gKaryawanID, gSalesEmployees, gSalesCount)) return 0;
 
-    if (isEdit) {
-        requireFutureDate = HasChanged(gTanggal, gOrigTanggal) ? 1 : 0;
-        enforceSalesOnly  = HasChanged(gKaryawanID, gOrigKaryawanID) ? 1 : 0;
-    }
+    /* Date must be valid YYYY-MM-DD; for insert we require today/future */
+    if (!IsDateValid(gTanggal)) return 0;
+    if (requireFutureDate && !IsDateTodayOrFuture(gTanggal)) return 0;
 
-    if (!ValidateForm(requireFutureDate, enforceSalesOnly)) {
-        gModal = MODAL_ERR_INPUT;
-        return;
-    }
-}
-
-static void TrimInPlace(char *s)
-{
-    if (!s) return;
-    int n = (int)strlen(s);
-    while (n > 0 && (s[n-1] == ' ' || s[n-1] == '\t' || s[n-1] == '\r' || s[n-1] == '\n')) {
-        s[n-1] = '\0';
-        n--;
-    }
-    int i = 0;
-    while (s[i] == ' ' || s[i] == '\t') i++;
-    if (i > 0) memmove(s, s+i, strlen(s+i)+1);
-}
-
-static int StrEqI(const char *a, const char *b)
-{
-    if (!a || !b) return 0;
-    while (*a && *b) {
-        char ca = (char)tolower((unsigned char)*a);
-        char cb = (char)tolower((unsigned char)*b);
-        if (ca != cb) return 0;
-        a++; b++;
-    }
-    return *a == '\0' && *b == '\0';
+    if (gStatusIndex < 0 || gStatusIndex >= kStatusCount) return 0;
+    return 1;
 }
 
 static void DrawTestDriveTable(Rectangle area, bool allowInteraction)
@@ -581,6 +587,95 @@ static void DrawStatusSelector(Rectangle bounds, int enabled)
     DrawText(txt, tx, ty, fs, BLUE);
 }
 
+
+/* Status filter combo with click-consume + overlay drawing (prevents being covered by table) */
+static int StatusFilterCombo(Rectangle bounds, int fontSize,
+                             int *selectedIndex, bool *open,
+                             bool *consumedClick, int overlayOnly)
+{
+    Vector2 mouse = GetMousePosition();
+    bool changed = false;
+
+    float rowH = (float)(fontSize + 10);
+    Rectangle listArea = (Rectangle){
+        bounds.x,
+        bounds.y + bounds.height + 4,
+        bounds.width,
+        (float)kStatusFilterCount * rowH
+    };
+
+    /* Input handling (only on first pass) */
+    if (!overlayOnly)
+    {
+        bool hoverBase = CheckCollisionPointRec(mouse, bounds);
+
+        if (hoverBase && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+        {
+            *open = !(*open);
+            if (consumedClick) *consumedClick = true;
+        }
+
+        if (*open)
+        {
+            /* Select item */
+            for (int i = 0; i < kStatusFilterCount; i++)
+            {
+                Rectangle itemRect = { listArea.x + 1, listArea.y + (float)i * rowH, listArea.width - 2, rowH };
+                bool hoverItem = CheckCollisionPointRec(mouse, itemRect);
+
+                if (hoverItem && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+                {
+                    if (*selectedIndex != i)
+                    {
+                        *selectedIndex = i;
+                        changed = true;
+                    }
+                    *open = false;
+                    if (consumedClick) *consumedClick = true;
+                }
+            }
+
+            /* Click outside closes */
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            {
+                bool inside = hoverBase || CheckCollisionPointRec(mouse, listArea);
+                if (!inside) *open = false;
+                else if (consumedClick) *consumedClick = true;
+            }
+        }
+
+        /* Draw header */
+        DrawRectangleRec(bounds, RAYWHITE);
+        DrawRectangleLines((int)bounds.x, (int)bounds.y, (int)bounds.width, (int)bounds.height, BLACK);
+
+        const char *label = "Select";
+        if (*selectedIndex >= 0 && *selectedIndex < kStatusFilterCount) label = kStatusFilterItems[*selectedIndex];
+
+        DrawText(label, (int)bounds.x + 10, (int)bounds.y + (int)((bounds.height - fontSize) / 2), fontSize, BLACK);
+        DrawText(*open ? "^" : "v", (int)(bounds.x + bounds.width - 18), (int)bounds.y + 6, fontSize, BLACK);
+    }
+
+    /* Draw dropdown overlay (second pass) */
+    if (overlayOnly && *open)
+    {
+        DrawRectangleRec(listArea, RAYWHITE);
+        DrawRectangleLines((int)listArea.x, (int)listArea.y, (int)listArea.width, (int)listArea.height, BLACK);
+
+        for (int i = 0; i < kStatusFilterCount; i++)
+        {
+            Rectangle itemRect = { listArea.x + 1, listArea.y + (float)i * rowH, listArea.width - 2, rowH };
+            bool hoverItem = CheckCollisionPointRec(mouse, itemRect);
+
+            if (hoverItem)
+                DrawRectangleRec(itemRect, (Color){220, 230, 255, 255});
+
+            DrawText(kStatusFilterItems[i], (int)itemRect.x + 10, (int)itemRect.y + 5, fontSize, BLACK);
+        }
+    }
+
+    return changed ? 1 : 0;
+}
+
 void SalesTestDrivePage(Rectangle contentArea, void *dbcPtr)
 {
     void *dbc = NULL;
@@ -671,7 +766,7 @@ void SalesTestDrivePage(Rectangle contentArea, void *dbcPtr)
     if (gSelected < 0) gStatusIndex = 0;
     DrawStatusSelector(statusBox, (gSelected >= 0) && allowInteraction);
     if (gSelected < 0)
-        DrawText("Locked: Dijadwalkan", (int)(col1X + 255), (int)rowY + 10, 16, BLACK);
+        DrawText("Locked: Scheduled", (int)(col1X + 255), (int)rowY + 10, 16, BLACK);
     else
         DrawText("Use < > to choose", (int)(col1X + 255), (int)rowY + 10, 16, BLACK);
 
@@ -717,7 +812,7 @@ void SalesTestDrivePage(Rectangle contentArea, void *dbcPtr)
                     ClearForm();
                     gNeedReload = 1;
                 } else {
-                    gModal = MODAL_ERR_INPUT;
+                    gModal = MODAL_ERR_DB;
                 }
             }
         }
@@ -746,7 +841,7 @@ void SalesTestDrivePage(Rectangle contentArea, void *dbcPtr)
                     gOrigTanggal[sizeof(gOrigTanggal) - 1] = '\0';
                     gNeedReload = 1;
                 } else {
-                    gModal = MODAL_ERR_INPUT;
+                    gModal = MODAL_ERR_DB;
                 }
             }
         }
@@ -762,11 +857,16 @@ void SalesTestDrivePage(Rectangle contentArea, void *dbcPtr)
     if (gModal == MODAL_ERR_INPUT) {
         UIModalResult r = UIDrawModalOK("There is an incorrect input, please check again !", "OK", 18);
         if (r == UI_MODAL_OK) gModal = MODAL_NONE;
+    } else if (gModal == MODAL_ERR_DB) {
+        UIModalResult r = UIDrawModalOK("Database error. Check PowerShell terminal for ODBC message.", "OK", 18);
+        if (r == UI_MODAL_OK) gModal = MODAL_NONE;
     } else if (gModal == MODAL_CONFIRM_DELETE) {
         UIModalResult r = UIDrawModalYesNo("Are you sure you want to delete?", "Yes", "No", 18);
         if (r == UI_MODAL_YES) {
+            bool ok = false;
             if (dbc && gPendingDeleteId[0]) {
-                if (DbTestDrive_Delete(dbc, gPendingDeleteId)) {
+                ok = DbTestDrive_Delete(dbc, gPendingDeleteId);
+                if (ok) {
                     SetToast("Data deleted successfully !");
                     gSelected = -1;
                     ClearForm();
@@ -774,7 +874,7 @@ void SalesTestDrivePage(Rectangle contentArea, void *dbcPtr)
                 }
             }
             gPendingDeleteId[0] = '\0';
-            gModal = MODAL_NONE;
+            gModal = ok ? MODAL_NONE : MODAL_ERR_DB;
         } else if (r == UI_MODAL_NO) {
             gPendingDeleteId[0] = '\0';
             gModal = MODAL_NONE;
@@ -782,92 +882,4 @@ void SalesTestDrivePage(Rectangle contentArea, void *dbcPtr)
     }
 
     DrawToast(contentArea);
-}
-
-/* Status filter combo with click-consume + overlay drawing (prevents being covered by table) */
-static int StatusFilterCombo(Rectangle bounds, int fontSize,
-                             int *selectedIndex, bool *open,
-                             bool *consumedClick, int overlayOnly)
-{
-    Vector2 mouse = GetMousePosition();
-    bool changed = false;
-
-    float rowH = (float)(fontSize + 10);
-    Rectangle listArea = (Rectangle){
-        bounds.x,
-        bounds.y + bounds.height + 4,
-        bounds.width,
-        (float)kStatusFilterCount * rowH
-    };
-
-    /* Input handling (only on first pass) */
-    if (!overlayOnly)
-    {
-        bool hoverBase = CheckCollisionPointRec(mouse, bounds);
-
-        if (hoverBase && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-        {
-            *open = !(*open);
-            if (consumedClick) *consumedClick = true;
-        }
-
-        if (*open)
-        {
-            /* Select item */
-            for (int i = 0; i < kStatusFilterCount; i++)
-            {
-                Rectangle itemRect = { listArea.x + 1, listArea.y + (float)i * rowH, listArea.width - 2, rowH };
-                bool hoverItem = CheckCollisionPointRec(mouse, itemRect);
-
-                if (hoverItem && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-                {
-                    if (*selectedIndex != i)
-                    {
-                        *selectedIndex = i;
-                        changed = true;
-                    }
-                    *open = false;
-                    if (consumedClick) *consumedClick = true;
-                }
-            }
-
-            /* Click outside closes */
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-            {
-                bool inside = hoverBase || CheckCollisionPointRec(mouse, listArea);
-                if (!inside) *open = false;
-                else if (consumedClick) *consumedClick = true;
-            }
-        }
-
-        /* Draw header */
-        DrawRectangleRec(bounds, RAYWHITE);
-        DrawRectangleLines((int)bounds.x, (int)bounds.y, (int)bounds.width, (int)bounds.height, BLACK);
-
-        const char *label = "Select";
-        if (*selectedIndex >= 0 && *selectedIndex < kStatusFilterCount) label = kStatusFilterItems[*selectedIndex];
-
-        DrawText(label, (int)bounds.x + 10, (int)bounds.y + (int)((bounds.height - fontSize) / 2), fontSize, BLACK);
-        DrawText(*open ? "^" : "v", (int)(bounds.x + bounds.width - 18), (int)bounds.y + 6, fontSize, BLACK);
-    }
-
-    /* Draw dropdown overlay (second pass) */
-    if (overlayOnly && *open)
-    {
-        DrawRectangleRec(listArea, RAYWHITE);
-        DrawRectangleLines((int)listArea.x, (int)listArea.y, (int)listArea.width, (int)listArea.height, BLACK);
-
-        for (int i = 0; i < kStatusFilterCount; i++)
-        {
-            Rectangle itemRect = { listArea.x + 1, listArea.y + (float)i * rowH, listArea.width - 2, rowH };
-            bool hoverItem = CheckCollisionPointRec(mouse, itemRect);
-
-            if (hoverItem)
-                DrawRectangleRec(itemRect, (Color){220, 230, 255, 255});
-
-            DrawText(kStatusFilterItems[i], (int)itemRect.x + 10, (int)itemRect.y + 5, fontSize, BLACK);
-        }
-    }
-
-    return changed ? 1 : 0;
 }
