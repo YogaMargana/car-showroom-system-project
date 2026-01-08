@@ -4,7 +4,6 @@
 #include <string.h>
 
 // TIDAK ADA lagi static bool DBCheckLogin di sini
-
 void InitLoginState(LoginState *ls) {
     memset(ls->username, 0, sizeof(ls->username));
     memset(ls->password, 0, sizeof(ls->password));

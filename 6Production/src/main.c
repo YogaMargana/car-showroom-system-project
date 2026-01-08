@@ -1,6 +1,7 @@
 #include "preheader.h"
 
 int main(void) {
+    // Layout
     InitWindow(800, 600, "Sistem Showroom Mobil");
     SetTargetFPS(60);
 
@@ -15,6 +16,23 @@ int main(void) {
     app.logo = LoadTexture("assets/logo.png");
     app.Landing = LoadTexture("assets/Landing.png");
     app.login = LoadTexture("assets/login.png");
+
+    Font uiFont = (Font){0};
+
+    const char *fontPathA = "assets/fonts/OpenSans-Regular.ttf";
+    const char *fontPathB = "../assets/fonts/OpenSans-Regular.ttf"; // jaga-jaga kalau exe dijalankan dari build/
+    const char *fontPath = NULL;
+
+    if (FileExists(fontPathA)) fontPath = fontPathA;
+    else if (FileExists(fontPathB)) fontPath = fontPathB;
+
+    if (fontPath) {
+    uiFont = LoadFontEx(fontPath, 64, 0, 0);
+    if (uiFont.texture.id != 0) {
+        SetTextureFilter(uiFont.texture, TEXTURE_FILTER_BILINEAR);
+        UISetFont(uiFont, 1.0f);
+    }
+}
 
     LoginState lsLogin;
     InitLoginState(&lsLogin);
@@ -107,6 +125,22 @@ int main(void) {
                 AdminAccessorissPage(rightArea, &koneksiDB);
                 break;
 
+            case HAL_CASHIER_INPUT_PENJUALAN_MOBIL:
+                AdminInputPenjualanMobilPage(&app, leftArea, rightArea, &koneksiDB);
+                break;
+
+            case HAL_CASHIER_PENJUALAN_MOBIL:
+                AdminPenjualannobilPage(&app, rightArea, &koneksiDB);
+                break;
+
+            case HAL_ADMIN_L_TEST_DRIVE:
+                AdminTestDriveReportPage(rightArea, &koneksiDB);
+                break;
+
+            case HAL_ADMIN_L_PENJUALAN:
+                AdminSalesReportPage(rightArea, &koneksiDB);
+                break;
+
             case HAL_DASHBOARD_CASHIER:
                 DrawText("Dashboard Kasir", (int)rightArea.x + 40, 120, 28, WHITE);
                 break;
@@ -125,6 +159,10 @@ int main(void) {
                          (int)rightArea.x + 40, 160, 18, WHITE);
                 break;
 
+            case HAL_SALES_DATA_PELANGGAN:
+                SalesCustomersPage(rightArea, &koneksiDB);
+                break;
+
             case HAL_EXIT:
                 jalan = false;
                 break;
@@ -137,6 +175,7 @@ int main(void) {
 
         EndDrawing();
     }
+    if (uiFont.texture.id != 0) UnloadFont(uiFont);
     CloseWindow();
     disconnectDB(&koneksiDB);
     

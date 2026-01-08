@@ -38,7 +38,7 @@ bool DbEmployees_LoadAll(void *dbcVoid, Employee *out, int outCap, int *outCount
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
 
     const char *sql =
-        "SELECT KaryawanID, Nama, Posisi, NoHP, Username, [Password] "
+        "SELECT KaryawanID, Nama, Posisi, NoHP, Email, Username, [Password] "
         "FROM dbo.Karyawan ORDER BY ID";
 
     SQLHSTMT stmt = SQL_NULL_HSTMT;
@@ -55,11 +55,12 @@ bool DbEmployees_LoadAll(void *dbcVoid, Employee *out, int outCap, int *outCount
         Employee e = {0};
 
         SQLGetData(stmt, 1, SQL_C_CHAR, e.KaryawanID, sizeof(e.KaryawanID), NULL);
-        SQLGetData(stmt, 2, SQL_C_CHAR, e.Nama,      sizeof(e.Nama),      NULL);
-        SQLGetData(stmt, 3, SQL_C_CHAR, e.Posisi,    sizeof(e.Posisi),    NULL);
-        SQLGetData(stmt, 4, SQL_C_CHAR, e.NoHP,      sizeof(e.NoHP),      NULL);
-        SQLGetData(stmt, 5, SQL_C_CHAR, e.Username,  sizeof(e.Username),  NULL);
-        SQLGetData(stmt, 6, SQL_C_CHAR, e.Password,  sizeof(e.Password),  NULL);
+        SQLGetData(stmt, 2, SQL_C_CHAR, e.Nama,       sizeof(e.Nama),       NULL);
+        SQLGetData(stmt, 3, SQL_C_CHAR, e.Posisi,     sizeof(e.Posisi),     NULL);
+        SQLGetData(stmt, 4, SQL_C_CHAR, e.NoHP,       sizeof(e.NoHP),       NULL);
+        SQLGetData(stmt, 5, SQL_C_CHAR, e.Email,      sizeof(e.Email),      NULL);
+        SQLGetData(stmt, 6, SQL_C_CHAR, e.Username,   sizeof(e.Username),   NULL);
+        SQLGetData(stmt, 7, SQL_C_CHAR, e.Password,   sizeof(e.Password),   NULL);
 
         out[n++] = e;
     }
@@ -73,24 +74,26 @@ bool DbEmployees_Insert(void *dbcVoid,
                         const char *nama,
                         const char *posisi,
                         const char *nohp,
+                        const char *email,
                         const char *username,
                         const char *password)
 {
     if (!dbcVoid) return false;
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
 
-    char n[128], p[64], h[32], u[128], pw[300];
+    char n[128], p[64], h[32], em[128], u[128], pw[300];
     EscapeSql(nama, n, sizeof(n));
     EscapeSql(posisi, p, sizeof(p));
     EscapeSql(nohp, h, sizeof(h));
+    EscapeSql(email, em, sizeof(em));
     EscapeSql(username, u, sizeof(u));
     EscapeSql(password, pw, sizeof(pw));
 
     char sql[1024];
     snprintf(sql, sizeof(sql),
-             "INSERT INTO dbo.Karyawan (Nama, Posisi, NoHP, Username, [Password]) "
-             "VALUES ('%s','%s','%s','%s','%s')",
-             n, p, h, u, pw);
+             "INSERT INTO dbo.Karyawan (Nama, Posisi, NoHP, Email, Username, [Password]) "
+             "VALUES ('%s','%s','%s','%s','%s','%s')",
+             n, p, h, em, u, pw);
 
     return ExecSQL(dbc, sql);
 }
@@ -100,26 +103,28 @@ bool DbEmployees_Update(void *dbcVoid,
                         const char *nama,
                         const char *posisi,
                         const char *nohp,
+                        const char *email,
                         const char *username,
                         const char *password)
 {
     if (!dbcVoid || !karyawanId) return false;
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
 
-    char id[32], n[128], p[64], h[32], u[128], pw[300];
+    char id[32], n[128], p[64], h[32], em[128], u[128], pw[300];
     EscapeSql(karyawanId, id, sizeof(id));
     EscapeSql(nama, n, sizeof(n));
     EscapeSql(posisi, p, sizeof(p));
     EscapeSql(nohp, h, sizeof(h));
+    EscapeSql(email, em, sizeof(em));
     EscapeSql(username, u, sizeof(u));
     EscapeSql(password, pw, sizeof(pw));
 
     char sql[1200];
     snprintf(sql, sizeof(sql),
              "UPDATE dbo.Karyawan SET "
-             "Nama='%s', Posisi='%s', NoHP='%s', Username='%s', [Password]='%s' "
+             "Nama='%s', Posisi='%s', NoHP='%s', Email='%s', Username='%s', [Password]='%s' "
              "WHERE KaryawanID='%s'",
-             n, p, h, u, pw, id);
+             n, p, h, em, u, pw, id);
 
     return ExecSQL(dbc, sql);
 }

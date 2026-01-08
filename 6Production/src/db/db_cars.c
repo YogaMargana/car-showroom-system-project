@@ -48,7 +48,7 @@ bool DbCars_LoadAll(void *dbcVoid, CarData *out, int outCap, int *outCount)
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
 
     const char *sql =
-        "SELECT MobilID, NamaMobil, "
+        "SELECT MobilID, NamaMobil, TipeMobil, "
         "CAST(Stok AS VARCHAR(8)) AS Stok, "
         "CAST(TahunProduksi AS VARCHAR(8)) AS TahunProduksi, "
         "CAST(Harga AS VARCHAR(32)) AS Harga "
@@ -69,9 +69,10 @@ bool DbCars_LoadAll(void *dbcVoid, CarData *out, int outCap, int *outCount)
 
         SQLGetData(stmt, 1, SQL_C_CHAR, c.MobilID,       sizeof(c.MobilID),       NULL);
         SQLGetData(stmt, 2, SQL_C_CHAR, c.NamaMobil,     sizeof(c.NamaMobil),     NULL);
-        SQLGetData(stmt, 3, SQL_C_CHAR, c.Stok,          sizeof(c.Stok),          NULL);
-        SQLGetData(stmt, 4, SQL_C_CHAR, c.TahunProduksi, sizeof(c.TahunProduksi), NULL);
-        SQLGetData(stmt, 5, SQL_C_CHAR, c.Harga,         sizeof(c.Harga),         NULL);
+        SQLGetData(stmt, 3, SQL_C_CHAR, c.TipeMobil,     sizeof(c.TipeMobil),     NULL);
+        SQLGetData(stmt, 4, SQL_C_CHAR, c.Stok,          sizeof(c.Stok),          NULL);
+        SQLGetData(stmt, 5, SQL_C_CHAR, c.TahunProduksi, sizeof(c.TahunProduksi), NULL);
+        SQLGetData(stmt, 6, SQL_C_CHAR, c.Harga,         sizeof(c.Harga),         NULL);
 
         out[n++] = c;
     }
@@ -82,6 +83,7 @@ bool DbCars_LoadAll(void *dbcVoid, CarData *out, int outCap, int *outCount)
 }
 
 bool DbCars_Insert(void *dbcVoid,
+                   const char *tipeMobil,
                    const char *nama,
                    const char *stok,
                    const char *tahunProduksi,
@@ -90,7 +92,8 @@ bool DbCars_Insert(void *dbcVoid,
     if (!dbcVoid) return false;
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
 
-    char namaE[64], stokE[16], tahunE[16], hargaE[32];
+    char tipeE[64], namaE[64], stokE[16], tahunE[16], hargaE[32];
+    EscapeSql(tipeMobil ? tipeMobil : "", tipeE, sizeof(tipeE));
     EscapeSql(nama ? nama : "", namaE, sizeof(namaE));
     EscapeSql(stok ? stok : "", stokE, sizeof(stokE));
     EscapeSql(tahunProduksi ? tahunProduksi : "", tahunE, sizeof(tahunE));
@@ -98,15 +101,16 @@ bool DbCars_Insert(void *dbcVoid,
 
     char sql[1024];
     snprintf(sql, sizeof(sql),
-             "INSERT INTO dbo.Mobil (NamaMobil, Stok, TahunProduksi, Harga) "
-             "VALUES ('%s','%s','%s','%s')",
-             namaE, stokE, tahunE, hargaE);
+             "INSERT INTO dbo.Mobil (TipeMobil, NamaMobil, Stok, TahunProduksi, Harga) "
+             "VALUES ('%s','%s','%s','%s','%s')",
+             tipeE, namaE, stokE, tahunE, hargaE);
 
     return ExecSQL(dbc, sql);
 }
 
 bool DbCars_Update(void *dbcVoid,
                    const char *mobilId,
+                   const char *tipeMobil,
                    const char *nama,
                    const char *stok,
                    const char *tahunProduksi,
@@ -115,8 +119,9 @@ bool DbCars_Update(void *dbcVoid,
     if (!dbcVoid || !mobilId) return false;
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
 
-    char idE[32], namaE[64], stokE[16], tahunE[16], hargaE[32];
+    char idE[32], tipeE[64], namaE[64], stokE[16], tahunE[16], hargaE[32];
     EscapeSql(mobilId, idE, sizeof(idE));
+    EscapeSql(tipeMobil ? tipeMobil : "", tipeE, sizeof(tipeE));
     EscapeSql(nama ? nama : "", namaE, sizeof(namaE));
     EscapeSql(stok ? stok : "", stokE, sizeof(stokE));
     EscapeSql(tahunProduksi ? tahunProduksi : "", tahunE, sizeof(tahunE));
@@ -125,9 +130,9 @@ bool DbCars_Update(void *dbcVoid,
     char sql[1200];
     snprintf(sql, sizeof(sql),
              "UPDATE dbo.Mobil SET "
-             "NamaMobil='%s', Stok='%s', TahunProduksi='%s', Harga='%s' "
+             "TipeMobil='%s', NamaMobil='%s', Stok='%s', TahunProduksi='%s', Harga='%s' "
              "WHERE MobilID='%s'",
-             namaE, stokE, tahunE, hargaE, idE);
+             tipeE, namaE, stokE, tahunE, hargaE, idE);
 
     return ExecSQL(dbc, sql);
 }

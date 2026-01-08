@@ -1,4 +1,5 @@
-#include "role_menu.h"
+ 
+ #include "role_menu.h"
 #include "ui.h"
 
 bool IsCashierPage(Halaman h) {
@@ -6,8 +7,6 @@ bool IsCashierPage(Halaman h) {
         case HAL_DASHBOARD_CASHIER:
         case HAL_CASHIER_PENJUALAN_MOBIL:
         case HAL_CASHIER_PENJUALAN_AKSESORIS:
-        case HAL_CASHIER_RIWAYAT_PENJUALAN_MOBIL:
-        case HAL_CASHIER_RIWAYAT_PENJUALAN_AKSESORIS:
         case HAL_CASHIER_DATA_PELANGGAN:
             return true;
         default:
@@ -19,9 +18,7 @@ bool IsSalesPage(Halaman h) {
     switch (h) {
         case HAL_DASHBOARD_SALES:
         case HAL_SALES_TEST_DRIVE:
-        case HAL_SALES_RIWAYAT_TEST_DRIVE:
         case HAL_SALES_DATA_PELANGGAN:
-        case HAL_JADWAL_TEST_DRIVE:
             return true;
         default:
             return false;
@@ -71,12 +68,6 @@ void DrawCashierLeftMenu(AppState *app, Rectangle leftArea) {
     if (UIButton(b3, "Accessory Sales", 18))
         app->halamanSekarang = HAL_CASHIER_PENJUALAN_AKSESORIS;
 
-    if (UIButton(b4, "Car Sales History", 18))
-        app->halamanSekarang = HAL_CASHIER_RIWAYAT_PENJUALAN_MOBIL;
-
-    if (UIButton(b5, "Accessory Sales History", 18))
-        app->halamanSekarang = HAL_CASHIER_RIWAYAT_PENJUALAN_AKSESORIS;
-
     // Tombol Kembali
     if (UIButton(backBtn, "Log Out", 18)) {
         app ->roleAktif = ROLE_NONE;
@@ -101,8 +92,6 @@ void DrawSalesLeftMenu(AppState *app, Rectangle leftArea) {
 
     Rectangle b1 = { x, y, w, h }; y += h + gap;
     Rectangle b2 = { x, y, w, h }; y += h + gap;
-    Rectangle b3 = { x, y, w, h }; y += h + gap;
-    Rectangle b4 = { x, y, w, h }; y += h + gap;
     Rectangle backBtn = { x, y + 630, w, 45 };
 
     if (UIButton(b1, "Customers Data", 18))
@@ -111,11 +100,7 @@ void DrawSalesLeftMenu(AppState *app, Rectangle leftArea) {
     if (UIButton(b2, "Test Drive", 18))
         app->halamanSekarang = HAL_SALES_TEST_DRIVE;
 
-    if (UIButton(b3, "Test Drive Schedule", 18))
-        app->halamanSekarang = HAL_JADWAL_TEST_DRIVE;
-
-    if (UIButton(b4, "Test Drive History", 18))
-        app->halamanSekarang = HAL_SALES_RIWAYAT_TEST_DRIVE;
+    /* Revisi V2: Schedule & History dihapus. Gunakan filter Status di halaman Test Drive. */
 
     if (UIButton(backBtn, "Log Out", 18)) {
         app ->roleAktif = ROLE_NONE;

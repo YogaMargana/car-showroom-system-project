@@ -45,7 +45,7 @@ bool DbCustomers_LoadAll(void *dbcVoid, Customer *out, int outCap, int *outCount
     if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt))) return false;
 
     const char *sql =
-    "SELECT PelangganID, Nama, Email, NoHP, CAST(Alamat AS VARCHAR(128)) AS Alamat "
+    "SELECT PelangganID, NoKTP, Nama, Email, NoHP, CAST(Alamat AS VARCHAR(128)) AS Alamat "
     "FROM dbo.Pelanggan ORDER BY ID";
 
     if (!SQL_SUCCEEDED(SQLExecDirect(stmt, (SQLCHAR*)sql, SQL_NTS))) {
@@ -58,10 +58,11 @@ bool DbCustomers_LoadAll(void *dbcVoid, Customer *out, int outCap, int *outCount
   SQLRETURN fr;
 while ((fr = SQLFetch(stmt)) != SQL_NO_DATA && SQL_SUCCEEDED(fr) && n < outCap) {
         SQLGetData(stmt, 1, SQL_C_CHAR, out[n].PelangganID, sizeof(out[n].PelangganID), NULL);
-        SQLGetData(stmt, 2, SQL_C_CHAR, out[n].Nama,        sizeof(out[n].Nama),        NULL);
-        SQLGetData(stmt, 3, SQL_C_CHAR, out[n].Email,       sizeof(out[n].Email),       NULL);
-        SQLGetData(stmt, 4, SQL_C_CHAR, out[n].NoHp,        sizeof(out[n].NoHp),        NULL);
-        SQLGetData(stmt, 5, SQL_C_CHAR, out[n].Alamat,      sizeof(out[n].Alamat),      NULL);
+        SQLGetData(stmt, 2, SQL_C_CHAR, out[n].NoKTP,       sizeof(out[n].NoKTP),       NULL);
+        SQLGetData(stmt, 3, SQL_C_CHAR, out[n].Nama,        sizeof(out[n].Nama),        NULL);
+        SQLGetData(stmt, 4, SQL_C_CHAR, out[n].Email,       sizeof(out[n].Email),       NULL);
+        SQLGetData(stmt, 5, SQL_C_CHAR, out[n].NoHp,        sizeof(out[n].NoHp),        NULL);
+        SQLGetData(stmt, 6, SQL_C_CHAR, out[n].Alamat,      sizeof(out[n].Alamat),      NULL);
         n++;
     }
 
@@ -70,12 +71,13 @@ while ((fr = SQLFetch(stmt)) != SQL_NO_DATA && SQL_SUCCEEDED(fr) && n < outCap) 
     return true;
 }
 
-bool DbCustomers_Insert(void *dbcVoid, const char *nama, const char *email, const char *noHp, const char *alamat)
+bool DbCustomers_Insert(void *dbcVoid, const char *noKtp, const char *nama, const char *email, const char *noHp, const char *alamat)
 {
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
     if (!dbc || !nama || nama[0] == '\0') return false;
 
-    char nmE[128], emE[128], hpE[64], alE[256];
+    char ktpE[64], nmE[128], emE[128], hpE[64], alE[256];
+    EscapeSql(noKtp ? noKtp : "", ktpE, sizeof(ktpE));
     EscapeSql(nama,   nmE, sizeof(nmE));
     EscapeSql(email ? email : "", emE, sizeof(emE));
     EscapeSql(noHp  ? noHp  : "", hpE, sizeof(hpE));
@@ -83,8 +85,8 @@ bool DbCustomers_Insert(void *dbcVoid, const char *nama, const char *email, cons
 
     char query[700];
     snprintf(query, sizeof(query),
-        "INSERT INTO dbo.Pelanggan (Nama, Email, NoHP, Alamat)"
-        "VALUES ('%s','%s','%s','%s')", nmE, emE, hpE, alE);
+        "INSERT INTO dbo.Pelanggan (NoKTP, Nama, Email, NoHP, Alamat)"
+        "VALUES ('%s','%s','%s','%s','%s')", ktpE, nmE, emE, hpE, alE);
 
     SQLHSTMT stmt = SQL_NULL_HSTMT;
     if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt))) return false;
@@ -95,13 +97,14 @@ bool DbCustomers_Insert(void *dbcVoid, const char *nama, const char *email, cons
     return SQL_SUCCEEDED(r);
 }
 
-bool DbCustomers_Update(void *dbcVoid, const char *pelangganId, const char *nama, const char *email, const char *noHp, const char *alamat)
+bool DbCustomers_Update(void *dbcVoid, const char *pelangganId, const char *noKtp, const char *nama, const char *email, const char *noHp, const char *alamat)
 {
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
     if (!dbc || !pelangganId || pelangganId[0] == '\0') return false;
 
-    char idE[32], nmE[128], emE[128], hpE[64], alE[256];
+    char idE[32], ktpE[64], nmE[128], emE[128], hpE[64], alE[256];
     EscapeSql(pelangganId, idE, sizeof(idE));
+    EscapeSql(noKtp ? noKtp : "", ktpE, sizeof(ktpE));
     EscapeSql(nama ? nama : "", nmE, sizeof(nmE));
     EscapeSql(email? email: "", emE, sizeof(emE));
     EscapeSql(noHp ? noHp : "", hpE, sizeof(hpE));
@@ -109,8 +112,8 @@ bool DbCustomers_Update(void *dbcVoid, const char *pelangganId, const char *nama
 
     char query[800];
     snprintf(query, sizeof(query),
-       "UPDATE dbo.Pelanggan SET Nama='%s', Email='%s', NoHP='%s', Alamat='%s' WHERE PelangganID='%s'",
-        nmE, emE, hpE, alE, idE);
+       "UPDATE dbo.Pelanggan SET NoKTP='%s', Nama='%s', Email='%s', NoHP='%s', Alamat='%s' WHERE PelangganID='%s'",
+        ktpE, nmE, emE, hpE, alE, idE);
 
     SQLHSTMT stmt = SQL_NULL_HSTMT;
     if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt))) return false;
