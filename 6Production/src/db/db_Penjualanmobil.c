@@ -330,7 +330,7 @@ bool DbPenjualanMobil_InsertBatch(void *dbcVoid,
     for (int i = 0; i < itemCount; i++)
     {
         // Ambil item dari cart
-        CartItemData *item = CartGetItem(i);
+        CartItemData *item = &items[i];
         if (!item)
         {
             printf("ERROR: CartGetItem(%d) return NULL\n", i);
