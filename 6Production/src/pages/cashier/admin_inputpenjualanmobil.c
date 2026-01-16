@@ -2,6 +2,7 @@
 
 #include "raylib.h"
 #include "ui.h"
+#include "cart_manager.h"
 #include "textbox.h"
 #include "db_cars.h"
 #include "db_customers.h"
@@ -47,11 +48,6 @@ static void ReloadCars(void *dbcPtr);
 static void ReloadLookups(void *dbcPtr);
 static int  PassSearch(const CarData *c);
 static void DrawSearchBox(Rectangle r, bool allowInput);
-static int  FindCartIndexByCar(int carIndex);
-static int  GetQtyByCar(int carIndex);
-static void CartSetQty(int carIndex, int qty);
-static void CartInc(int carIndex);
-static void CartDec(int carIndex);
 
 static bool MiniButtonColored(Rectangle r, const char *label, Color base, Color hotCol);
 static void DrawCarsTable(Rectangle area, bool allowInteraction);
@@ -73,6 +69,18 @@ static void PayPopup_HandleInput(long long total);
 static void PayPopup_Draw(Rectangle screenArea, long long total, bool *confirmed);
 static bool SaveCartToDb(void *dbcVoid);
 static void ResetInputPage(void);
+
+// Helper: remove item from cart by MobilID
+static void CartRemoveByMobilID(const char *mobilID)
+{
+    for (int i = 0; i < CartGetCount(); i++) {
+        CartItemData *item = CartGetItem(i);
+        if (item && strcmp(item->MobilID, mobilID) == 0) {
+            CartRemove(i);
+            return;
+        }
+    }
+}
 
 // =====================
 // DATA MOBIL (KIRI)
@@ -98,18 +106,6 @@ static int gScrollActionX = 0;
 // =====================
 
 static int gHasilScroll = 0;
-
-// =====================
-// CART
-// =====================
-
-typedef struct {
-    int carIndex;
-    int qty;
-} CartItem;
-
-static CartItem gCart[MAX_CART];
-static int      gCartCount = 0;
 
 // =====================
 // LOOKUP LISTS (KANAN)
@@ -359,16 +355,7 @@ static long long GetCarHargaLL(const CarData *c)
 
 static long long CalcTotalCart(void)
 {
-    long long total = 0;
-    for (int i = 0; i < gCartCount; i++) {
-        int carIndex = gCart[i].carIndex;
-        int qty      = gCart[i].qty;
-        if (carIndex < 0 || carIndex >= gCarCount) continue;
-        if (qty <= 0) continue;
-        long long harga = GetCarHargaLL(&gCars[carIndex]);
-        total += harga * (long long)qty;
-    }
-    return total;
+    return CartGetTotal();
 }
 
 // =====================
@@ -506,68 +493,6 @@ static void DrawSearchBox(Rectangle r, bool allowInput)
 }
 
 // =====================
-// CART
-// =====================
-
-static int FindCartIndexByCar(int carIndex)
-{
-    for (int i = 0; i < gCartCount; i++) {
-        if (gCart[i].carIndex == carIndex) return i;
-    }
-    return -1;
-}
-
-static int GetQtyByCar(int carIndex)
-{
-    int ci = FindCartIndexByCar(carIndex);
-    return (ci >= 0) ? gCart[ci].qty : 0;
-}
-
-static void CartSetQty(int carIndex, int qty)
-{
-    if (carIndex < 0 || carIndex >= gCarCount) return;
-    if (qty < 0) qty = 0;
-
-    // Clamp qty to available stock (prevent over-selling)
-    int stock = atoi(gCars[carIndex].Stok);
-    if (stock < 0) stock = 0;
-    if (qty > stock) qty = stock;
-
-    int ci = FindCartIndexByCar(carIndex);
-
-    if (qty == 0) {
-        if (ci >= 0) {
-            for (int k = ci; k < gCartCount - 1; k++) {
-                gCart[k] = gCart[k + 1];
-            }
-            gCartCount--;
-        }
-        return;
-    }
-
-    if (ci >= 0) {
-        gCart[ci].qty = qty;
-        return;
-    }
-
-    if (gCartCount < MAX_CART) {
-        gCart[gCartCount].carIndex = carIndex;
-        gCart[gCartCount].qty      = qty;
-        gCartCount++;
-    }
-}
-
-static void CartInc(int carIndex)
-{
-    CartSetQty(carIndex, GetQtyByCar(carIndex) + 1);
-}
-
-static void CartDec(int carIndex)
-{
-    CartSetQty(carIndex, GetQtyByCar(carIndex) - 1);
-}
-
-// =====================
 // MINI BUTTON
 // =====================
 
@@ -598,6 +523,54 @@ static void DrawButtonDisabled(Rectangle r, const char *label, int fontSize)
              (int)(r.x + (r.width - tw) / 2),
              (int)(r.y + (r.height - fontSize) / 2),
              fontSize, GRAY);
+}
+
+// ============================================================
+// HELPER: Tambah/kurangi qty mobil di cart
+// ============================================================
+
+static void CartAddByCarIndex(int carIndex, int deltaQty)
+{
+    if (carIndex < 0 || carIndex >= gCarCount) return;
+    
+    const char *mobilID = gCars[carIndex].MobilID;
+    const char *namaMobil = gCars[carIndex].NamaMobil;
+    long harga = GetCarHargaLL(&gCars[carIndex]);
+    int stock = atoi(gCars[carIndex].Stok);
+    
+    // Cek apakah mobil sudah ada di cart
+    for (int i = 0; i < CartGetCount(); i++)
+    {
+        CartItemData *item = CartGetItem(i);
+        if (item && strcmp(item->MobilID, mobilID) == 0)
+        {
+            // Sudah ada, update qty
+            int newQty = item->Qty + deltaQty;
+            if (newQty < 0) newQty = 0;
+            if (newQty > stock) newQty = stock;
+            
+            if (newQty == 0)
+                CartRemove(i);
+            else
+            if (newQty > 0) {
+                CartAdd(gCars[carIndex].MobilID, 
+                        gCars[carIndex].NamaMobil, 
+                        1, 
+                        GetCarHargaLL(&gCars[carIndex]));
+            } else {
+                CartRemoveByMobilID(gCars[carIndex].MobilID);
+            }
+            return;
+        }
+    }
+    
+    // Belum ada, tambah baru (jika deltaQty positif)
+    if (deltaQty > 0)
+    {
+        int qty = deltaQty;
+        if (qty > stock) qty = stock;
+        CartAdd(mobilID, namaMobil, qty, harga);
+    }
 }
 
 // =====================
@@ -737,7 +710,18 @@ static void DrawCarsTable(Rectangle area, bool allowInteraction)
             Rectangle hargaClip = (Rectangle){colHarga, row.y + 6, 160, 18};
             DrawTextClipped(hargaClip, hargaRp, 16, BLACK, 0);
 
-            int qty   = GetQtyByCar(i);
+            // Ambil qty dari cart berdasarkan MobilID
+            int qty = 0;
+            for (int ci = 0; ci < CartGetCount(); ci++)
+            {
+                CartItemData *cartItem = CartGetItem(ci);
+                if (cartItem && strcmp(cartItem->MobilID, gCars[i].MobilID) == 0)
+                {
+                    qty = cartItem->Qty;
+                    break;
+                }
+            }
+
             int stock = atoi(gCars[i].Stok);
 
             Rectangle actClip = (Rectangle){colAct, row.y + 4, wAct, 22};
@@ -748,7 +732,7 @@ static void DrawCarsTable(Rectangle area, bool allowInteraction)
             Rectangle bPlus  = (Rectangle){colAct + 56 - gScrollActionX, row.y + 4, 22, 22};
 
             if (MiniButtonColored(bMinus, "-", (Color){200, 40, 40, 255}, (Color){230, 70, 70, 255})) {
-                CartDec(i);
+                CartAddByCarIndex(i, -1);
             }
 
             DrawRectangleRec(bQty, (Color){240, 240, 240, 255});
@@ -760,7 +744,7 @@ static void DrawCarsTable(Rectangle area, bool allowInteraction)
             // disable tombol + kalau stok 0
             if (stock > 0) {
                 if (MiniButtonColored(bPlus, "+", (Color){40, 160, 60, 255}, (Color){70, 190, 90, 255})) {
-                    CartInc(i);
+                    CartAddByCarIndex(i, +1);
                 }
             } else {
                 DrawRectangleRec(bPlus, (Color){220, 220, 220, 255});
@@ -806,7 +790,7 @@ static void DrawCarsTable(Rectangle area, bool allowInteraction)
 
 static void DrawHasilInputTableScroll(Rectangle area)
 {
-    int  count            = gCartCount;
+    int  count            = CartGetCount();
     bool allowInteraction = !(gPayPopupOpen || gErrorPopupOpen);
 
     const float pad     = 10.0f;
@@ -872,20 +856,39 @@ static void DrawHasilInputTableScroll(Rectangle area)
     int start = gHasilScroll;
     int end   = start + visibleRows;
     if (end > count) end = count;
-
+    
     for (int i = start; i < end; i++) {
-        int   row      = i - start;
-        float y        = rowsY + row * HASIL_ROW_H;
-        int   carIndex = gCart[i].carIndex;
-        int   qty      = gCart[i].qty;
-        const char *nama  = "-";
-        long long   harga = 0;
-
-        if (carIndex >= 0 && carIndex < gCarCount) {
-            nama  = gCars[carIndex].NamaMobil;
-            harga = GetCarHargaLL(&gCars[carIndex]);
+        int row = i - start;
+        float y = rowsY + row * HASIL_ROW_H;
+        
+        // Ambil item dari cart
+        CartItemData *item = CartGetItem(i);
+        if (!item) continue;
+        
+        // Deklarasi nama dan harga (HANYA SEKALI)
+        const char *nama = "-";
+        long long harga = 0;
+        
+        // Cari carIndex (HANYA SEKALI)
+        int carIndex = -1;
+        for (int j = 0; j < gCarCount; j++) {
+            if (strcmp(gCars[j].MobilID, item->MobilID) == 0) {
+                carIndex = j;
+                break;
+            }
         }
-
+        
+        // Update nama & harga (HANYA SEKALI)
+        if (carIndex >= 0 && carIndex < gCarCount) {
+            nama = gCars[carIndex].NamaMobil;
+            harga = GetCarHargaLL(&gCars[carIndex]);
+        } else {
+            nama = item->NamaMobil;
+            harga = item->Harga;
+        }
+        
+        int qty = item->Qty;
+        
         char no[8];
         snprintf(no, sizeof(no), "%d", i + 1);
         char qtyStr[16];
@@ -904,7 +907,7 @@ static void DrawHasilInputTableScroll(Rectangle area)
             Rectangle bPlus  = (Rectangle){colQtyX + 66,  y + 2, 22, 22};
 
             if (MiniButtonColored(bMinus, "-", (Color){200, 40, 40, 255}, (Color){230, 70, 70, 255})) {
-                CartDec(carIndex);
+                CartRemove(i);
             }
 
             DrawRectangleRec(bBox, (Color){240, 240, 240, 255});
@@ -916,7 +919,7 @@ static void DrawHasilInputTableScroll(Rectangle area)
                      16, BLACK);
 
             if (MiniButtonColored(bPlus, "+", (Color){40, 160, 60, 255}, (Color){70, 190, 90, 255})) {
-                CartInc(carIndex);
+                CartAdd(item->MobilID, item->NamaMobil, 1, harga);
             }
         } else {
             DrawText(qtyStr, (int)colQtyX + 2, (int)y + 4, 16, BLACK);
@@ -1228,35 +1231,86 @@ static void PayPopup_Draw(Rectangle screenArea, long long total, bool *confirmed
 
 static bool SaveCartToDb(void *dbcVoid)
 {
-    if (!dbcVoid)      return false;
-    if (gCartCount <= 0) return false;
+    if (!dbcVoid) return false;
+    if (CartIsEmpty()) return false;
 
-    for (int i = 0; i < gCartCount; i++) {
-        int carIndex = gCart[i].carIndex;
-        int qty      = gCart[i].qty;
-        if (qty <= 0) continue;
+    void *dbc = NULL;
+    if (dbcVoid)
+        dbc = *(void **)dbcVoid;
 
-        long long lineTotal = GetCarHargaLL(&gCars[carIndex]) * (long long)qty;
+    // ✓ Hitung total
+    long long total = CalcTotalCart();
 
-        char qtyStr[16], totalStr[32], uangStr[32];
-        snprintf(qtyStr,   sizeof(qtyStr),   "%d",  qty);
-        snprintf(totalStr, sizeof(totalStr), "%lld", lineTotal);
-        snprintf(uangStr,  sizeof(uangStr),  "%lld", gUangValue);
+    // ✓ LANGSUNG call InsertBatch dengan loop gCart
+    // Buat array untuk items
+    CartItemData items[MAX_CART];
+    int itemCount = 0;
 
-        if (!DbPenjualanMobil_Insert(dbcVoid,
-                                     gNoTransaksi,
-                                     gCars[carIndex].MobilID,
-                                     gSalesID, gKasirID, gPelangganID,
-                                     qtyStr, totalStr, uangStr)) {
-            return false;
+    for (int i = 0; i < CartGetCount(); i++)
+    {
+    CartItemData *item = CartGetItem(i);
+    if (!item) continue;
+    
+    int carIndex = -1;
+    // Cari carIndex dari MobilID
+    for (int j = 0; j < gCarCount; j++)
+    {
+        if (strcmp(gCars[j].MobilID, item->MobilID) == 0)
+        {
+            carIndex = j;
+            break;
         }
-        // Stok akan otomatis berkurang oleh trigger database (TR_PenjualanMobilDetail_KurangiStok).
+    }
+    
+    if (carIndex < 0) continue;
+    
+    int qty = item->Qty;
+
+
+        if (carIndex < 0 || carIndex >= gCarCount || qty <= 0)
+            continue;
+
+        // Get mobil data dari gCars
+        strncpy(items[itemCount].MobilID, gCars[carIndex].MobilID, 
+                sizeof(items[itemCount].MobilID) - 1);
+        strncpy(items[itemCount].NamaMobil, gCars[carIndex].NamaMobil, 
+                sizeof(items[itemCount].NamaMobil) - 1);
+        items[itemCount].Qty = qty;
+        items[itemCount].Harga = GetCarHargaLL(&gCars[carIndex]);
+        items[itemCount].Subtotal = items[itemCount].Harga * qty;
+
+        itemCount++;
+
+        if (itemCount >= MAX_CART) break;
     }
 
-    // supaya reload data mobil dari DB
-    gNeedReload = 1;
+    // ✓ CALL InsertBatch
+    char noTransaksi[20] = "";
 
-    return true;
+    bool success = DbPenjualanMobil_InsertBatch(
+        dbc, 
+        gKasirID, 
+        gSalesID, 
+        gPelangganID,
+        items,          // ✅ Tambahkan ini
+        itemCount,      // ✅ Sekarang ini parameter ke-6
+        total, 
+        gUangValue, 
+        noTransaksi, 
+        sizeof(noTransaksi)
+    );
+
+    if (success)
+    {
+        strncpy(gNoTransaksi, noTransaksi, sizeof(gNoTransaksi) - 1);
+        gNeedReload = 1;
+        return true;
+    }
+    else
+    {
+        printf("ERROR: InsertBatch failed!\n");
+        return false;
+    }
 }
 
 // =====================
@@ -1265,7 +1319,7 @@ static bool SaveCartToDb(void *dbcVoid)
 
 static void ResetInputPage(void)
 {
-    gCartCount = 0;
+    CartClear();
     gSelected  = -1;
 
     gNoTransaksi[0]     = '\0';
@@ -1387,7 +1441,7 @@ void AdminInputPenjualanMobilPage(AppState *app, Rectangle leftArea, Rectangle r
             } else if (gSalesID[0] == '\0') {
                 snprintf(gErrorMessage, sizeof(gErrorMessage), "Sales belum dipilih!");
                 valid = false;
-            } else if (gCartCount <= 0 || CalcTotalCart() <= 0) {
+            } else if (CartIsEmpty() || CalcTotalCart() == 0) {
                 snprintf(gErrorMessage, sizeof(gErrorMessage), "Keranjang penjualan masih kosong!");
                 valid = false;
             }
