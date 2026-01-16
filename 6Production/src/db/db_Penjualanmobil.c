@@ -1,8 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-
 #include "db_penjualanmobil.h"
-
 #include <windows.h>
 #include <sql.h>
 #include <sqlext.h>
@@ -34,16 +32,19 @@ static bool ExecSQL(SQLHDBC dbc, const char *sql)
 {
     if (!dbc || !sql)
         return false;
-
     SQLHSTMT stmt = SQL_NULL_HSTMT;
     if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt)))
         return false;
-
     SQLRETURN r = SQLExecDirect(stmt, (SQLCHAR *)sql, SQL_NTS);
     SQLFreeHandle(SQL_HANDLE_STMT, stmt);
     return SQL_SUCCEEDED(r);
 }
 
+/* ============================================================
+   FIXED: LoadAll dengan Deduplicate di Aplikasi (Solusi #1)
+   - Query tetap pakai LEFT JOIN ke detail (seperti original)
+   - Deduplicate di loop (skip row jika PenjualanMobilID sama)
+   ============================================================ */
 bool DbPenjualanMobil_LoadAll(void *dbcVoid,
                               Penjualanmobildata *out,
                               int outCap,
@@ -55,7 +56,8 @@ bool DbPenjualanMobil_LoadAll(void *dbcVoid,
         return false;
 
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
-
+    
+    // Query SAMA seperti original (dengan LEFT JOIN detail)
     const char *sql =
         "SELECT "
         "  p.PenjualanMobilID, "
@@ -90,34 +92,54 @@ bool DbPenjualanMobil_LoadAll(void *dbcVoid,
 
     int n = 0;
     SQLRETURN fr;
+    char lastPenjualanMobilID[32] = "";  // TRACK last ID untuk deduplicate
+    
     while ((fr = SQLFetch(stmt)) != SQL_NO_DATA && SQL_SUCCEEDED(fr) && n < outCap)
     {
         Penjualanmobildata c;
         memset(&c, 0, sizeof(c));
-
-        SQLGetData(stmt, 1,  SQL_C_CHAR, c.PenjualanMobilID, sizeof(c.PenjualanMobilID), NULL);
-        SQLGetData(stmt, 2,  SQL_C_CHAR, c.NoTransaksi,      sizeof(c.NoTransaksi),      NULL);
-        SQLGetData(stmt, 3,  SQL_C_CHAR, c.MobilID,          sizeof(c.MobilID),          NULL);
-        SQLGetData(stmt, 4,  SQL_C_CHAR, c.KasirID,          sizeof(c.KasirID),          NULL);
-        SQLGetData(stmt, 5,  SQL_C_CHAR, c.SalesID,          sizeof(c.SalesID),          NULL);
-        SQLGetData(stmt, 6,  SQL_C_CHAR, c.PelangganID,      sizeof(c.PelangganID),      NULL);
-        SQLGetData(stmt, 7,  SQL_C_CHAR, c.JumlahProduk,     sizeof(c.JumlahProduk),     NULL);
-        SQLGetData(stmt, 8,  SQL_C_CHAR, c.TanggalTransaksi, sizeof(c.TanggalTransaksi), NULL);
-        SQLGetData(stmt, 9,  SQL_C_CHAR, c.StatusPembayaran, sizeof(c.StatusPembayaran), NULL);
-        SQLGetData(stmt, 10, SQL_C_CHAR, c.Total,            sizeof(c.Total),            NULL);
-        SQLGetData(stmt, 11, SQL_C_CHAR, c.Uang,             sizeof(c.Uang),             NULL);
-        SQLGetData(stmt, 12, SQL_C_CHAR, c.Kembalian,        sizeof(c.Kembalian),        NULL);
-        SQLGetData(stmt, 13, SQL_C_CHAR, c.SalesNama,        sizeof(c.SalesNama),        NULL);
-        SQLGetData(stmt, 14, SQL_C_CHAR, c.KasirNama,        sizeof(c.KasirNama),        NULL);
-
-        out[n++] = c;
+        
+        // Fetch semua data dari query
+        SQLGetData(stmt, 1, SQL_C_CHAR, c.PenjualanMobilID, sizeof(c.PenjualanMobilID), NULL);
+        SQLGetData(stmt, 2, SQL_C_CHAR, c.NoTransaksi, sizeof(c.NoTransaksi), NULL);
+        SQLGetData(stmt, 3, SQL_C_CHAR, c.MobilID, sizeof(c.MobilID), NULL);
+        SQLGetData(stmt, 4, SQL_C_CHAR, c.KasirID, sizeof(c.KasirID), NULL);
+        SQLGetData(stmt, 5, SQL_C_CHAR, c.SalesID, sizeof(c.SalesID), NULL);
+        SQLGetData(stmt, 6, SQL_C_CHAR, c.PelangganID, sizeof(c.PelangganID), NULL);
+        SQLGetData(stmt, 7, SQL_C_CHAR, c.JumlahProduk, sizeof(c.JumlahProduk), NULL);
+        SQLGetData(stmt, 8, SQL_C_CHAR, c.TanggalTransaksi, sizeof(c.TanggalTransaksi), NULL);
+        SQLGetData(stmt, 9, SQL_C_CHAR, c.StatusPembayaran, sizeof(c.StatusPembayaran), NULL);
+        SQLGetData(stmt, 10, SQL_C_CHAR, c.Total, sizeof(c.Total), NULL);
+        SQLGetData(stmt, 11, SQL_C_CHAR, c.Uang, sizeof(c.Uang), NULL);
+        SQLGetData(stmt, 12, SQL_C_CHAR, c.Kembalian, sizeof(c.Kembalian), NULL);
+        SQLGetData(stmt, 13, SQL_C_CHAR, c.SalesNama, sizeof(c.SalesNama), NULL);
+        SQLGetData(stmt, 14, SQL_C_CHAR, c.KasirNama, sizeof(c.KasirNama), NULL);
+        
+        // ============================================================
+        // DEDUPLICATE LOGIC:
+        // Hanya insert jika PenjualanMobilID BERBEDA dari yang sebelumnya
+        // Ini mencegah duplicate rows saat 1 transaksi punya 2+ detail
+        // ============================================================
+        if (strcmp(c.PenjualanMobilID, lastPenjualanMobilID) != 0)
+        {
+            out[n++] = c;
+            strncpy(lastPenjualanMobilID, c.PenjualanMobilID, sizeof(lastPenjualanMobilID) - 1);
+            lastPenjualanMobilID[sizeof(lastPenjualanMobilID) - 1] = '\0';
+        }
+        // Jika PenjualanMobilID sama dengan row sebelumnya → SKIP (ignore duplicate)
     }
-
+    
     SQLFreeHandle(SQL_HANDLE_STMT, stmt);
     *outCount = n;
     return true;
 }
 
+/* ============================================================
+   FIXED: Insert dengan Harga dari tabel Mobil
+   - Header insert ke PenjualanMobil
+   - Detail insert ke PenjualanMobilDetail
+   - Harga ambil dari tabel Mobil (bukan calculate)
+   ============================================================ */
 bool DbPenjualanMobil_Insert(void *dbcVoid,
                              const char *NoTransaksi,
                              const char *MobilID,
@@ -130,8 +152,8 @@ bool DbPenjualanMobil_Insert(void *dbcVoid,
 {
     if (!dbcVoid)
         return false;
-    SQLHDBC dbc = (SQLHDBC)dbcVoid;
 
+    SQLHDBC dbc = (SQLHDBC)dbcVoid;
     char noTrE[64], mobilE[64], kasirE[64], salesE[64], pelangganE[64];
     char qtyE[32], totalE[32], uangE[32];
 
@@ -144,34 +166,34 @@ bool DbPenjualanMobil_Insert(void *dbcVoid,
     EscapeSql(Total ? Total : "0", totalE, sizeof(totalE));
     EscapeSql(Uang ? Uang : "0", uangE, sizeof(uangE));
 
-    // Skema DB baru:
-    // - Header: dbo.PenjualanMobil (tanpa MobilID/JumlahProduk)
-    // - Detail: dbo.PenjualanMobilDetail (MobilID, Qty, Harga)
-    // Trigger stok ada di detail, jadi jangan update stok manual di aplikasi.
-
-    char sql[1800];
+    // FIXED: Ambil Harga dari tabel Mobil, bukan calculate dari Total/Qty
+    char sql[2000];
     snprintf(sql, sizeof(sql),
-             "DECLARE @newId TABLE (PenjualanMobilID VARCHAR(7)); "
-             "INSERT INTO dbo.PenjualanMobil (NoTransaksi, SalesID, KasirID, PelangganID, StatusPembayaran, Total, Uang) "
-             "OUTPUT inserted.PenjualanMobilID INTO @newId(PenjualanMobilID) "
-             "VALUES ('%s','%s','%s','%s','Berhasil',%s,%s); "
-             "INSERT INTO dbo.PenjualanMobilDetail (PenjualanMobilID, MobilID, Qty, Harga) "
-             "SELECT PenjualanMobilID, '%s', %s, (CASE WHEN %s > 0 THEN (%s / %s) ELSE 0 END) "
-             "FROM @newId;",
-             noTrE, salesE, kasirE, pelangganE, totalE, uangE,
-             mobilE, qtyE, qtyE, totalE, qtyE);
+        "DECLARE @newId TABLE (PenjualanMobilID VARCHAR(7)); "
+        "INSERT INTO dbo.PenjualanMobil (NoTransaksi, SalesID, KasirID, PelangganID, StatusPembayaran, Total, Uang) "
+        "OUTPUT inserted.PenjualanMobilID INTO @newId(PenjualanMobilID) "
+        "VALUES ('%s','%s','%s','%s','Berhasil',%s,%s); "
+        "INSERT INTO dbo.PenjualanMobilDetail (PenjualanMobilID, MobilID, Qty, Harga) "
+        "SELECT ni.PenjualanMobilID, m.MobilID, %s, m.Harga "
+        "FROM @newId ni, dbo.Mobil m "
+        "WHERE m.MobilID = '%s'",
+        noTrE, salesE, kasirE, pelangganE, totalE, uangE,
+        qtyE, mobilE);
 
     return ExecSQL(dbc, sql);
 }
 
+/* ============================================================
+   CreateNoTransaksi - Generate nomor transaksi unik
+   ============================================================ */
 bool DbPenjualanMobil_CreateNoTransaksi(void *dbcVoid,
                                         char *outNo,
                                         int outSize)
 {
     if (!dbcVoid || !outNo || outSize <= 0)
         return false;
-    SQLHDBC dbc = (SQLHDBC)dbcVoid;
 
+    SQLHDBC dbc = (SQLHDBC)dbcVoid;
     const char *sql = "SELECT NEXT VALUE FOR dbo.SeqNoTransaksi";
 
     SQLHSTMT stmt = SQL_NULL_HSTMT;
@@ -194,44 +216,44 @@ bool DbPenjualanMobil_CreateNoTransaksi(void *dbcVoid,
     return true;
 }
 
+/* ============================================================
+   FIXED: Update - HANYA update Header, jangan update Detail di sini
+   - MobilID & JumlahProduk TIDAK BOLEH di-update di tabel PenjualanMobil
+   - Karena field itu ada di tabel PenjualanMobilDetail
+   - Buat function terpisah untuk update detail jika diperlukan
+   ============================================================ */
 bool DbPenjualanMobil_Update(void *dbcVoid,
                              const char *PenjualanMobilID,
                              const char *NoTransaksi,
-                             const char *MobilID,
                              const char *KasirID,
                              const char *SalesID,
                              const char *PelangganID,
-                             const char *JumlahProduk,
                              const char *Total,
                              const char *Uang)
 {
     if (!dbcVoid || !PenjualanMobilID)
         return false;
+
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
+    char idE[32], noTrE[64], kasirE[64], salesE[64], pelangganE[64];
+    char totalE[32], uangE[32];
 
-    char idE[32];
     EscapeSql(PenjualanMobilID, idE, sizeof(idE));
-
-    char noTrE[64], mobilE[64], kasirE[64], salesE[64], pelangganE[64];
-    char jmlE[32], totalE[32], uangE[32];
-
     EscapeSql(NoTransaksi ? NoTransaksi : "", noTrE, sizeof(noTrE));
-    EscapeSql(MobilID ? MobilID : "", mobilE, sizeof(mobilE));
     EscapeSql(KasirID ? KasirID : "", kasirE, sizeof(kasirE));
     EscapeSql(SalesID ? SalesID : "", salesE, sizeof(salesE));
     EscapeSql(PelangganID ? PelangganID : "", pelangganE, sizeof(pelangganE));
-    EscapeSql(JumlahProduk ? JumlahProduk : "", jmlE, sizeof(jmlE));
-    EscapeSql(Total ? Total : "", totalE, sizeof(totalE));
-    EscapeSql(Uang ? Uang : "", uangE, sizeof(uangE));
+    EscapeSql(Total ? Total : "0", totalE, sizeof(totalE));
+    EscapeSql(Uang ? Uang : "0", uangE, sizeof(uangE));
 
-    char sql[1400];
+    // FIXED: HANYA update header fields, jangan MobilID & JumlahProduk
+    char sql[1000];
     snprintf(sql, sizeof(sql),
-             "UPDATE dbo.PenjualanMobil "
-             "SET NoTransaksi='%s', MobilID='%s', KasirID='%s', "
-             "SalesID='%s', PelangganID='%s', JumlahProduk=%s, Total=%s, Uang=%s "
-             "WHERE PenjualanMobilID='%s'",
-             noTrE, mobilE, kasirE, salesE, pelangganE,
-             jmlE, totalE, uangE, idE);
+        "UPDATE dbo.PenjualanMobil "
+        "SET NoTransaksi='%s', KasirID='%s', SalesID='%s', "
+        "PelangganID='%s', Total=%s, Uang=%s "
+        "WHERE PenjualanMobilID='%s'",
+        noTrE, kasirE, salesE, pelangganE, totalE, uangE, idE);
 
     return ExecSQL(dbc, sql);
 }
