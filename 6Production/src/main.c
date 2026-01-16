@@ -133,6 +133,14 @@ int main(void) {
                 AdminPenjualannobilPage(&app, rightArea, &koneksiDB);
                 break;
 
+            case HAL_CASHIER_INPUT_PENJUALAN_AKSESORIS:
+                AdminInputPenjualanaksesorisPage(&app, leftArea, rightArea, &koneksiDB);
+                break;
+
+            case HAL_CASHIER_PENJUALAN_AKSESORIS:
+                AdminPenjualanaksesorisPage(&app, rightArea, &koneksiDB);
+                break;
+
             case HAL_ADMIN_L_TEST_DRIVE:
                 AdminTestDriveReportPage(rightArea, &koneksiDB);
                 break;

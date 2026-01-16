@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <windows.h>
 #include <sql.h>
 #include <sqlext.h>
 

@@ -40,8 +40,10 @@ void connectKeDB(SQLHDBC *koneksiDb)
     }
 
     // Connect to database
+    // Database project ini sekarang menggunakan dbGWD_NEW.
+    // Pastikan DSN ODBC kamu mengarah ke server yang sama.
     ret = SQLDriverConnect(*koneksiDb, NULL,
-        "DSN=dbGWD;DATABASE=dbGWD;Uid=Admin;Pwd=6Production",
+        "DSN=dbGWD_NEW;DATABASE=dbGWD_NEW;Uid=Admin;Pwd=6Production",
         SQL_NTS, NULL, 0, NULL, SQL_DRIVER_COMPLETE);
 
     if (SQL_SUCCEEDED(ret))

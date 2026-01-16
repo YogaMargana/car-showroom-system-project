@@ -1,6 +1,7 @@
 #include "loginPage.h"
 #include "ui.h"
 #include "auth.h"
+#include <stdio.h>
 #include <string.h>
 
 // TIDAK ADA lagi static bool DBCheckLogin di sini
@@ -78,9 +79,17 @@ bool DrawLoginPage(AppState *app, LoginState *ls,
         Role role = ROLE_NONE;
 
         // Cek ke database melalui auth.c
-        if (DBCheckLogin(conn, ls->username, ls->password, &role)) {
+        char kid[16] = {0};
+        char knama[64] = {0};
+
+        if (DBCheckLogin(conn, ls->username, ls->password, &role, kid, (int)sizeof(kid), knama, (int)sizeof(knama))) {
             ls->showError  = false;
             app->roleAktif = role;
+
+            // simpan session login
+            snprintf(app->currentKaryawanID, (int)sizeof(app->currentKaryawanID), "%s", kid);
+            snprintf(app->currentNama, (int)sizeof(app->currentNama), "%s", knama);
+            snprintf(app->currentUsername, (int)sizeof(app->currentUsername), "%s", ls->username);
 
             if (role == ROLE_ADMIN) {
                 app->halamanSekarang = HAL_DASHBOARD_ADMIN;

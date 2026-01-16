@@ -44,7 +44,10 @@ static bool ExecSQL(SQLHDBC dbc, const char *sql)
     return SQL_SUCCEEDED(r);
 }
 
-bool DbPenjualanMobil_LoadAll(void *dbcVoid, Penjualanmobildata *out, int outCap, int *outCount)
+bool DbPenjualanMobil_LoadAll(void *dbcVoid,
+                              Penjualanmobildata *out,
+                              int outCap,
+                              int *outCount)
 {
     if (outCount)
         *outCount = 0;
@@ -57,11 +60,11 @@ bool DbPenjualanMobil_LoadAll(void *dbcVoid, Penjualanmobildata *out, int outCap
         "SELECT "
         "  p.PenjualanMobilID, "
         "  p.NoTransaksi, "
-        "  p.MobilID, "
-        "  p.SalesID, "
+        "  d.MobilID, "
         "  p.KasirID, "
+        "  p.SalesID, "
         "  p.PelangganID, "
-        "  p.Qty, "
+        "  CAST(ISNULL(d.Qty,0) AS varchar(12)) AS JumlahProduk, "
         "  CONVERT(varchar(10), p.TanggalTransaksi, 23) AS TanggalTransaksi, "
         "  p.StatusPembayaran, "
         "  p.Total, "
@@ -70,6 +73,7 @@ bool DbPenjualanMobil_LoadAll(void *dbcVoid, Penjualanmobildata *out, int outCap
         "  s.Nama AS SalesNama, "
         "  k.Nama AS KasirNama "
         "FROM dbo.PenjualanMobil p "
+        "LEFT JOIN dbo.PenjualanMobilDetail d ON d.PenjualanMobilID = p.PenjualanMobilID "
         "LEFT JOIN dbo.Karyawan s ON s.KaryawanID = p.SalesID "
         "LEFT JOIN dbo.Karyawan k ON k.KaryawanID = p.KasirID "
         "ORDER BY p.PenjualanMobilID DESC";
@@ -91,20 +95,20 @@ bool DbPenjualanMobil_LoadAll(void *dbcVoid, Penjualanmobildata *out, int outCap
         Penjualanmobildata c;
         memset(&c, 0, sizeof(c));
 
-        SQLGetData(stmt, 1, SQL_C_CHAR, c.PenjualanMobilID, sizeof(c.PenjualanMobilID), NULL);
-        SQLGetData(stmt, 2, SQL_C_CHAR, c.NoTransaksi, sizeof(c.NoTransaksi), NULL);
-        SQLGetData(stmt, 3, SQL_C_CHAR, c.MobilID, sizeof(c.MobilID), NULL);
-        SQLGetData(stmt, 4, SQL_C_CHAR, c.SalesID, sizeof(c.SalesID), NULL);
-        SQLGetData(stmt, 5, SQL_C_CHAR, c.KasirID, sizeof(c.KasirID), NULL);
-        SQLGetData(stmt, 6, SQL_C_CHAR, c.PelangganID, sizeof(c.PelangganID), NULL);
-        SQLGetData(stmt, 7, SQL_C_CHAR, c.Qty, sizeof(c.Qty), NULL);
-        SQLGetData(stmt, 8, SQL_C_CHAR, c.TanggalTransaksi, sizeof(c.TanggalTransaksi), NULL);
-        SQLGetData(stmt, 9, SQL_C_CHAR, c.StatusPembayaran, sizeof(c.StatusPembayaran), NULL);
-        SQLGetData(stmt, 10, SQL_C_CHAR, c.Total, sizeof(c.Total), NULL);
-        SQLGetData(stmt, 11, SQL_C_CHAR, c.Uang, sizeof(c.Uang), NULL);
-        SQLGetData(stmt, 12, SQL_C_CHAR, c.Kembalian, sizeof(c.Kembalian), NULL);
-        SQLGetData(stmt, 13, SQL_C_CHAR, c.SalesNama, sizeof(c.SalesNama), NULL);
-        SQLGetData(stmt, 14, SQL_C_CHAR, c.KasirNama, sizeof(c.KasirNama), NULL);
+        SQLGetData(stmt, 1,  SQL_C_CHAR, c.PenjualanMobilID, sizeof(c.PenjualanMobilID), NULL);
+        SQLGetData(stmt, 2,  SQL_C_CHAR, c.NoTransaksi,      sizeof(c.NoTransaksi),      NULL);
+        SQLGetData(stmt, 3,  SQL_C_CHAR, c.MobilID,          sizeof(c.MobilID),          NULL);
+        SQLGetData(stmt, 4,  SQL_C_CHAR, c.KasirID,          sizeof(c.KasirID),          NULL);
+        SQLGetData(stmt, 5,  SQL_C_CHAR, c.SalesID,          sizeof(c.SalesID),          NULL);
+        SQLGetData(stmt, 6,  SQL_C_CHAR, c.PelangganID,      sizeof(c.PelangganID),      NULL);
+        SQLGetData(stmt, 7,  SQL_C_CHAR, c.JumlahProduk,     sizeof(c.JumlahProduk),     NULL);
+        SQLGetData(stmt, 8,  SQL_C_CHAR, c.TanggalTransaksi, sizeof(c.TanggalTransaksi), NULL);
+        SQLGetData(stmt, 9,  SQL_C_CHAR, c.StatusPembayaran, sizeof(c.StatusPembayaran), NULL);
+        SQLGetData(stmt, 10, SQL_C_CHAR, c.Total,            sizeof(c.Total),            NULL);
+        SQLGetData(stmt, 11, SQL_C_CHAR, c.Uang,             sizeof(c.Uang),             NULL);
+        SQLGetData(stmt, 12, SQL_C_CHAR, c.Kembalian,        sizeof(c.Kembalian),        NULL);
+        SQLGetData(stmt, 13, SQL_C_CHAR, c.SalesNama,        sizeof(c.SalesNama),        NULL);
+        SQLGetData(stmt, 14, SQL_C_CHAR, c.KasirNama,        sizeof(c.KasirNama),        NULL);
 
         out[n++] = c;
     }
@@ -117,10 +121,10 @@ bool DbPenjualanMobil_LoadAll(void *dbcVoid, Penjualanmobildata *out, int outCap
 bool DbPenjualanMobil_Insert(void *dbcVoid,
                              const char *NoTransaksi,
                              const char *MobilID,
-                             const char *SalesID,
                              const char *KasirID,
+                             const char *SalesID,
                              const char *PelangganID,
-                             const char *Qty,
+                             const char *JumlahProduk,
                              const char *Total,
                              const char *Uang)
 {
@@ -128,30 +132,41 @@ bool DbPenjualanMobil_Insert(void *dbcVoid,
         return false;
     SQLHDBC dbc = (SQLHDBC)dbcVoid;
 
-    char noTrE[64], mobilE[64], salesE[64], kasirE[64], pelangganE[64];
+    char noTrE[64], mobilE[64], kasirE[64], salesE[64], pelangganE[64];
     char qtyE[32], totalE[32], uangE[32];
 
     EscapeSql(NoTransaksi ? NoTransaksi : "", noTrE, sizeof(noTrE));
     EscapeSql(MobilID ? MobilID : "", mobilE, sizeof(mobilE));
-    EscapeSql(SalesID ? SalesID : "", salesE, sizeof(salesE));
     EscapeSql(KasirID ? KasirID : "", kasirE, sizeof(kasirE));
+    EscapeSql(SalesID ? SalesID : "", salesE, sizeof(salesE));
     EscapeSql(PelangganID ? PelangganID : "", pelangganE, sizeof(pelangganE));
-    EscapeSql(Qty ? Qty : "", qtyE, sizeof(qtyE));
-    EscapeSql(Total ? Total : "", totalE, sizeof(totalE));
-    EscapeSql(Uang ? Uang : "", uangE, sizeof(uangE));
+    EscapeSql(JumlahProduk ? JumlahProduk : "0", qtyE, sizeof(qtyE));
+    EscapeSql(Total ? Total : "0", totalE, sizeof(totalE));
+    EscapeSql(Uang ? Uang : "0", uangE, sizeof(uangE));
 
-    // Tidak kirim TanggalTransaksi (DEFAULT), StatusPembayaran & Kembalian (computed)
-    char sql[1200];
+    // Skema DB baru:
+    // - Header: dbo.PenjualanMobil (tanpa MobilID/JumlahProduk)
+    // - Detail: dbo.PenjualanMobilDetail (MobilID, Qty, Harga)
+    // Trigger stok ada di detail, jadi jangan update stok manual di aplikasi.
+
+    char sql[1800];
     snprintf(sql, sizeof(sql),
-             "INSERT INTO dbo.PenjualanMobil "
-             "(NoTransaksi, MobilID, SalesID, KasirID, PelangganID, Qty, Total, Uang) "
-             "VALUES ('%s','%s','%s','%s','%s',%s,%s,%s)",
-             noTrE, mobilE, salesE, kasirE, pelangganE, qtyE, totalE, uangE);
+             "DECLARE @newId TABLE (PenjualanMobilID VARCHAR(7)); "
+             "INSERT INTO dbo.PenjualanMobil (NoTransaksi, SalesID, KasirID, PelangganID, StatusPembayaran, Total, Uang) "
+             "OUTPUT inserted.PenjualanMobilID INTO @newId(PenjualanMobilID) "
+             "VALUES ('%s','%s','%s','%s','Berhasil',%s,%s); "
+             "INSERT INTO dbo.PenjualanMobilDetail (PenjualanMobilID, MobilID, Qty, Harga) "
+             "SELECT PenjualanMobilID, '%s', %s, (CASE WHEN %s > 0 THEN (%s / %s) ELSE 0 END) "
+             "FROM @newId;",
+             noTrE, salesE, kasirE, pelangganE, totalE, uangE,
+             mobilE, qtyE, qtyE, totalE, qtyE);
 
     return ExecSQL(dbc, sql);
 }
 
-bool DbPenjualanMobil_CreateNoTransaksi(void *dbcVoid, char *outNo, int outSize)
+bool DbPenjualanMobil_CreateNoTransaksi(void *dbcVoid,
+                                        char *outNo,
+                                        int outSize)
 {
     if (!dbcVoid || !outNo || outSize <= 0)
         return false;
@@ -175,7 +190,7 @@ bool DbPenjualanMobil_CreateNoTransaksi(void *dbcVoid, char *outNo, int outSize)
 
     SQLFreeHandle(SQL_HANDLE_STMT, stmt);
 
-    snprintf(outNo, (size_t)outSize, "%d", nextNo);
+    snprintf(outNo, (size_t)outSize, "TRX%05d", nextNo);
     return true;
 }
 
@@ -183,10 +198,10 @@ bool DbPenjualanMobil_Update(void *dbcVoid,
                              const char *PenjualanMobilID,
                              const char *NoTransaksi,
                              const char *MobilID,
-                             const char *SalesID,
                              const char *KasirID,
+                             const char *SalesID,
                              const char *PelangganID,
-                             const char *Qty,
+                             const char *JumlahProduk,
                              const char *Total,
                              const char *Uang)
 {
@@ -197,32 +212,32 @@ bool DbPenjualanMobil_Update(void *dbcVoid,
     char idE[32];
     EscapeSql(PenjualanMobilID, idE, sizeof(idE));
 
-    char noTrE[64], mobilE[64], salesE[64], kasirE[64], pelangganE[64];
-    char qtyE[32], totalE[32], uangE[32];
+    char noTrE[64], mobilE[64], kasirE[64], salesE[64], pelangganE[64];
+    char jmlE[32], totalE[32], uangE[32];
 
     EscapeSql(NoTransaksi ? NoTransaksi : "", noTrE, sizeof(noTrE));
     EscapeSql(MobilID ? MobilID : "", mobilE, sizeof(mobilE));
-    EscapeSql(SalesID ? SalesID : "", salesE, sizeof(salesE));
     EscapeSql(KasirID ? KasirID : "", kasirE, sizeof(kasirE));
+    EscapeSql(SalesID ? SalesID : "", salesE, sizeof(salesE));
     EscapeSql(PelangganID ? PelangganID : "", pelangganE, sizeof(pelangganE));
-    EscapeSql(Qty ? Qty : "", qtyE, sizeof(qtyE));
+    EscapeSql(JumlahProduk ? JumlahProduk : "", jmlE, sizeof(jmlE));
     EscapeSql(Total ? Total : "", totalE, sizeof(totalE));
     EscapeSql(Uang ? Uang : "", uangE, sizeof(uangE));
 
-    // ✅ FIX: UPDATE (bukan INSERT)
     char sql[1400];
     snprintf(sql, sizeof(sql),
              "UPDATE dbo.PenjualanMobil "
-             "SET NoTransaksi='%s', MobilID='%s', SalesID='%s', "
-             "KasirID='%s', PelangganID='%s', Qty=%s, Total=%s, Uang=%s "
+             "SET NoTransaksi='%s', MobilID='%s', KasirID='%s', "
+             "SalesID='%s', PelangganID='%s', JumlahProduk=%s, Total=%s, Uang=%s "
              "WHERE PenjualanMobilID='%s'",
-             noTrE, mobilE, salesE, kasirE, pelangganE,
-             qtyE, totalE, uangE, idE);
+             noTrE, mobilE, kasirE, salesE, pelangganE,
+             jmlE, totalE, uangE, idE);
 
     return ExecSQL(dbc, sql);
 }
 
-bool DbPenjualanMobil_Delete(void *dbcVoid, const char *PenjualanMobilID)
+bool DbPenjualanMobil_Delete(void *dbcVoid,
+                             const char *PenjualanMobilID)
 {
     if (!dbcVoid || !PenjualanMobilID)
         return false;

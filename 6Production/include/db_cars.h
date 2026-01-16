@@ -19,6 +19,9 @@ bool DbCars_Insert(void *dbc,
                    const char *stok,
                    const char *tahunProduksi,
                    const char *harga);
+                   // tambah di akhir file
+bool DbCarData_UpdateStock(void *dbcVoid, const char *mobilId, int newStock);
+
 bool DbCars_Update(void *dbc,
                    const char *mobilId,
                    const char *tipeMobil,

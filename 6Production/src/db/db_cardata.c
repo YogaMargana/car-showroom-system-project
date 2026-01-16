@@ -13,11 +13,22 @@
 static void EscapeSql(const char *src, char *dst, size_t dstSize)
 {
     size_t j = 0;
-    for (size_t i = 0; src[i] && j + 1 < dstSize; i++) {
-        if (src[i] == '\'') {
-            if (j + 2 < dstSize) { dst[j++] = '\''; dst[j++] = '\''; }
+    if (!dst || dstSize == 0) return;
+    if (!src) { dst[0] = '\0'; return; }
+
+    for (size_t i = 0; src[i] && j + 1 < dstSize; i++)
+    {
+        if (src[i] == '\'')
+        {
+            if (j + 2 < dstSize)
+            {
+                dst[j++] = '\'';
+                dst[j++] = '\'';
+            }
             else break;
-        } else {
+        }
+        else
+        {
             dst[j++] = src[i];
         }
     }
@@ -26,29 +37,51 @@ static void EscapeSql(const char *src, char *dst, size_t dstSize)
 
 static void PrintOdbcError(SQLSMALLINT handleType, SQLHANDLE handle)
 {
-    SQLCHAR state[6], msg[256];
-    SQLINTEGER native;
-    SQLSMALLINT len;
+    SQLCHAR state[6] = {0}, msg[256] = {0};
+    SQLINTEGER native = 0;
+    SQLSMALLINT len = 0;
 
-    if (SQLGetDiagRec(handleType, handle, 1, state, &native, msg, sizeof(msg), &len) == SQL_SUCCESS) {
+    if (SQLGetDiagRec(handleType, handle, 1, state, &native, msg, sizeof(msg), &len) == SQL_SUCCESS)
+    {
         printf("ODBC Error [%s] %ld: %s\n", state, (long)native, msg);
     }
 }
 
+static bool ExecDirect(SQLHDBC dbc, const char *sql)
+{
+    SQLHSTMT stmt = SQL_NULL_HSTMT;
+    if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt)))
+        return false;
+
+    SQLRETURN r = SQLExecDirect(stmt, (SQLCHAR *)sql, SQL_NTS);
+    if (!SQL_SUCCEEDED(r))
+        PrintOdbcError(SQL_HANDLE_STMT, stmt);
+
+    SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+    return SQL_SUCCEEDED(r);
+}
 
 bool DbCarData_LoadAll(void *dbcVoid, Car *out, int outCap, int *outCount)
 {
-    SQLHDBC dbc = (SQLHDBC)dbcVoid;
-    if (!dbc || !out || outCap <= 0 || !outCount) return false;
+    if (outCount) *outCount = 0;
+    if (!dbcVoid || !out || outCap <= 0 || !outCount) return false;
 
-    SQLHSTMT stmt = SQL_NULL_HSTMT;
-    if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt))) return false;
+    SQLHDBC dbc = (SQLHDBC)dbcVoid;
 
     const char *sql =
-    "SELECT MobilID, NamaMobil, TahunProduksi, Harga, Stok "
-    "FROM dbo.Cars ORDER BY MobilID";
+        "SELECT MobilID, NamaMobil, "
+        "CAST(TahunProduksi AS VARCHAR(8)) AS TahunProduksi, "
+        "CAST(Harga AS VARCHAR(32)) AS Harga, "
+        "CAST(Stok  AS VARCHAR(10)) AS Stok "
+        "FROM dbo.Mobil ORDER BY ID";
 
-    if (!SQL_SUCCEEDED(SQLExecDirect(stmt, (SQLCHAR*)sql, SQL_NTS))) {
+    SQLHSTMT stmt = SQL_NULL_HSTMT;
+    if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt)))
+        return false;
+
+    SQLRETURN r = SQLExecDirect(stmt, (SQLCHAR *)sql, SQL_NTS);
+    if (!SQL_SUCCEEDED(r))
+    {
         PrintOdbcError(SQL_HANDLE_STMT, stmt);
         SQLFreeHandle(SQL_HANDLE_STMT, stmt);
         return false;
@@ -56,12 +89,13 @@ bool DbCarData_LoadAll(void *dbcVoid, Car *out, int outCap, int *outCount)
 
     int n = 0;
     SQLRETURN fr;
-    while ((fr = SQLFetch(stmt)) != SQL_NO_DATA && SQL_SUCCEEDED(fr) && n < outCap) {
-        SQLGetData(stmt, 1, SQL_C_CHAR, out[n].MobilID,      sizeof(out[n].MobilID),      NULL);
-        SQLGetData(stmt, 2, SQL_C_CHAR, out[n].NamaMobil,    sizeof(out[n].NamaMobil),    NULL);
-        SQLGetData(stmt, 3, SQL_C_CHAR, out[n].TahunProduksi,sizeof(out[n].TahunProduksi),NULL);
-        SQLGetData(stmt, 4, SQL_C_CHAR, out[n].Harga,        sizeof(out[n].Harga),        NULL);
-        SQLGetData(stmt, 5, SQL_C_CHAR, out[n].Stok,         sizeof(out[n].Stok),         NULL);
+    while ((fr = SQLFetch(stmt)) != SQL_NO_DATA && SQL_SUCCEEDED(fr) && n < outCap)
+    {
+        SQLGetData(stmt, 1, SQL_C_CHAR, out[n].MobilID,       sizeof(out[n].MobilID),       NULL);
+        SQLGetData(stmt, 2, SQL_C_CHAR, out[n].NamaMobil,     sizeof(out[n].NamaMobil),     NULL);
+        SQLGetData(stmt, 3, SQL_C_CHAR, out[n].TahunProduksi, sizeof(out[n].TahunProduksi), NULL);
+        SQLGetData(stmt, 4, SQL_C_CHAR, out[n].Harga,         sizeof(out[n].Harga),         NULL);
+        SQLGetData(stmt, 5, SQL_C_CHAR, out[n].Stok,          sizeof(out[n].Stok),          NULL);
         n++;
     }
 
@@ -70,74 +104,73 @@ bool DbCarData_LoadAll(void *dbcVoid, Car *out, int outCap, int *outCount)
     return true;
 }
 
-bool DbCarData_Insert(void *dbc, const char *namaMobil, const char *tahunProduksi, const char *harga, const char *stok)
+bool DbCarData_Insert(void *dbcVoid,
+                      const char *NamaMobil,
+                      const char *TahunProduksi,
+                      const char *Harga,
+                      const char *Stok)
 {
-    SQLHDBC dbcHandle = (SQLHDBC)dbc;
-    if (!dbcHandle || !namaMobil || namaMobil[0] == '\0') return false;
+    SQLHDBC dbc = (SQLHDBC)dbcVoid;
+    if (!dbc || !NamaMobil || NamaMobil[0] == '\0') return false;
 
-    char nmE[128], brE[128], tpE[64], hgE[256], skE[64];
-    EscapeSql(namaMobil,    nmE, sizeof(nmE));
-    EscapeSql(tahunProduksi ? tahunProduksi : "", tpE, sizeof(tpE));
-    EscapeSql(harga ? harga : "", hgE, sizeof(hgE));
-    EscapeSql(stok ? stok : "", skE, sizeof(skE));
+    /* NOTE:
+       Kolom TipeMobil pada dbo.Mobil adalah NOT NULL (sesuai revisi DB kamu).
+       Karena fungsi ini tidak menerima tipe, kita isi default 'N/A'.
+       Untuk CRUD Mobil yang lengkap, sebaiknya pakai db_cars.c (DbCars_Insert) yang punya parameter tipe.
+    */
+    char nmE[128], thE[32], hgE[64], skE[32];
+    EscapeSql(NamaMobil, nmE, sizeof(nmE));
+    EscapeSql(TahunProduksi ? TahunProduksi : "0", thE, sizeof(thE));
+    EscapeSql(Harga ? Harga : "0", hgE, sizeof(hgE));
+    EscapeSql(Stok ? Stok : "0", skE, sizeof(skE));
 
-    char query[800];
-    snprintf(query, sizeof(query),
-        "INSERT INTO dbo.Cars (NamaMobil, TahunProduksi, Harga, Stok)"
-        "VALUES ('%s','%s','%s','%s','%s')", nmE, brE, tpE, hgE, skE);
+    char sql[512];
+    snprintf(sql, sizeof(sql),
+             "INSERT INTO dbo.Mobil (NamaMobil, TipeMobil, Stok, TahunProduksi, Harga) "
+             "VALUES ('%s','N/A', %s, %s, %s)",
+             nmE, skE, thE, hgE);
 
-    SQLHSTMT stmt = SQL_NULL_HSTMT;
-    if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbcHandle, &stmt))) return false;
-
-    SQLRETURN r = SQLExecDirect(stmt, (SQLCHAR*)query, SQL_NTS);
-    SQLFreeHandle(SQL_HANDLE_STMT, stmt);
-
-    return SQL_SUCCEEDED(r);
+    return ExecDirect(dbc, sql);
 }
 
-bool DbCarData_Update(void *dbc, const char *mobilID, const char *namaMobil, const char *tahunProduksi, const char *harga, const char *stok)
+bool DbCarData_Update(void *dbcVoid,
+                      const char *MobilID,
+                      const char *NamaMobil,
+                      const char *TahunProduksi,
+                      const char *Harga,
+                      const char *Stok)
 {
-    SQLHDBC dbcHandle = (SQLHDBC)dbc;
-    if (!dbcHandle || !mobilID || mobilID[0] == '\0') return false;
+    SQLHDBC dbc = (SQLHDBC)dbcVoid;
+    if (!dbc || !MobilID || MobilID[0] == '\0') return false;
 
-    char idE[32], nmE[128], brE[128], tpE[64], hgE[256], skE[64];
-    EscapeSql(mobilID, idE, sizeof(idE));
-    EscapeSql(namaMobil ? namaMobil : "", nmE, sizeof(nmE));
-    EscapeSql(tahunProduksi ? tahunProduksi : "", tpE, sizeof(tpE));
-    EscapeSql(harga ? harga : "", hgE, sizeof(hgE));
-    EscapeSql(stok ? stok : "", skE, sizeof(skE));
+    char idE[32], nmE[128], thE[32], hgE[64], skE[32];
+    EscapeSql(MobilID, idE, sizeof(idE));
+    EscapeSql(NamaMobil ? NamaMobil : "", nmE, sizeof(nmE));
+    EscapeSql(TahunProduksi ? TahunProduksi : "0", thE, sizeof(thE));
+    EscapeSql(Harga ? Harga : "0", hgE, sizeof(hgE));
+    EscapeSql(Stok ? Stok : "0", skE, sizeof(skE));
 
-    char query[800];
-    snprintf(query, sizeof(query),
-       "UPDATE dbo.Cars SET NamaMobil='%s', TahunProduksi='%s', Harga='%s', Stok='%s' WHERE MobilID='%s'",
-        nmE, brE, tpE, hgE, skE, idE);
+    char sql[600];
+    /* TipeMobil tidak diubah di sini (fungsi ini legacy). */
+    snprintf(sql, sizeof(sql),
+             "UPDATE dbo.Mobil SET NamaMobil='%s', Stok=%s, TahunProduksi=%s, Harga=%s "
+             "WHERE MobilID='%s'",
+             nmE, skE, thE, hgE, idE);
 
-    SQLHSTMT stmt = SQL_NULL_HSTMT;
-    if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbcHandle, &stmt))) return false;
-
-    SQLRETURN r = SQLExecDirect(stmt, (SQLCHAR*)query, SQL_NTS);
-    SQLFreeHandle(SQL_HANDLE_STMT, stmt);
-
-    return SQL_SUCCEEDED(r);
+    return ExecDirect(dbc, sql);
 }
 
-bool DbCarData_Delete(void *dbc, const char *mobilID)
+bool DbCarData_Delete(void *dbcVoid, const char *MobilID)
 {
-    SQLHDBC dbcHandle = (SQLHDBC)dbc;
-    if (!dbcHandle || !mobilID || mobilID[0] == '\0') return false;
+    SQLHDBC dbc = (SQLHDBC)dbcVoid;
+    if (!dbc || !MobilID || MobilID[0] == '\0') return false;
 
     char idE[32];
-    EscapeSql(mobilID, idE, sizeof(idE));
+    EscapeSql(MobilID, idE, sizeof(idE));
 
-    char query[256];
-    snprintf(query, sizeof(query),
-        "DELETE FROM dbo.Cars WHERE MobilID='%s'", idE);
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+             "DELETE FROM dbo.Mobil WHERE MobilID='%s'", idE);
 
-    SQLHSTMT stmt = SQL_NULL_HSTMT;
-    if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, dbcHandle, &stmt))) return false;
-
-    SQLRETURN r = SQLExecDirect(stmt, (SQLCHAR*)query, SQL_NTS);
-    SQLFreeHandle(SQL_HANDLE_STMT, stmt);
-
-    return SQL_SUCCEEDED(r);
+    return ExecDirect(dbc, sql);
 }

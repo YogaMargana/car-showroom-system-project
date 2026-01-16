@@ -152,3 +152,26 @@ bool DbCars_Delete(void *dbcVoid, const char *mobilId)
 
     return ExecSQL(dbc, sql);
 }
+
+// =======================================================
+// TAMBAHAN: UPDATE STOK SAJA (untuk penjualan)
+// =======================================================
+bool DbCarData_UpdateStock(void *dbcVoid, const char *mobilId, int newStock)
+{
+    if (!dbcVoid || !mobilId) return false;
+
+    if (newStock < 0) newStock = 0;
+
+    SQLHDBC dbc = (SQLHDBC)dbcVoid;
+
+    char idE[32];
+    EscapeSql(mobilId, idE, sizeof(idE));
+
+    // Stok sebaiknya numeric, jadi tidak perlu pakai quotes
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+             "UPDATE dbo.Mobil SET Stok=%d WHERE MobilID='%s'",
+             newStock, idE);
+
+    return ExecSQL(dbc, sql);
+}

@@ -16,6 +16,10 @@ typedef struct {
 
     Role roleAktif;
 
+    char currentKaryawanID[16];
+    char currentNama[64];
+    char currentUsername[64];
+
     Texture2D logo;
     Texture2D Landing;
     Texture2D login;

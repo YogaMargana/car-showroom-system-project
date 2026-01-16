@@ -1,13 +1,13 @@
-#ifndef DB_PENJUALANMOBIL_H
-#define DB_PENJUALANMOBIL_H
+#ifndef DB_PENJUALANAKSESORIS_H
+#define DB_PENJUALANAKSESORIS_H
 
 #include <stdbool.h>
 
 typedef struct
 {
-    char PenjualanMobilID[20];
+    char PenjualanAksesorisID[20];
     char NoTransaksi[50];
-    char MobilID[20];
+    char AksesorisID[20];
     char KasirID[20];        // kolom KasirID di tabel
     char SalesID[20];
     char PelangganID[20];
@@ -22,16 +22,16 @@ typedef struct
 
     char SalesNama[100];
     char KasirNama[100];
-} Penjualanmobildata;
+} PenjualanAksesorisdata;
 
-bool DbPenjualanMobil_LoadAll(void *dbcVoid,
-                              Penjualanmobildata *out,
+bool DbPenjualanAksesoris_LoadAll(void *dbcVoid,
+                              PenjualanAksesorisdata *out,
                               int outCap,
                               int *outCount);
 
-bool DbPenjualanMobil_Insert(void *dbcVoid,
+bool DbPenjualanAksesoris_Insert(void *dbcVoid,
                              const char *NoTransaksi,
-                             const char *MobilID,
+                             const char *AksesorisID,
                              const char *KasirID,
                              const char *SalesID,
                              const char *PelangganID,
@@ -39,14 +39,14 @@ bool DbPenjualanMobil_Insert(void *dbcVoid,
                              const char *Total,
                              const char *Uang);
 
-bool DbPenjualanMobil_CreateNoTransaksi(void *dbcVoid,
+bool DbPenjualanAksesoris_CreateNoTransaksi(void *dbcVoid,
                                         char *outNo,
                                         int outSize);
 
-bool DbPenjualanMobil_Update(void *dbcVoid,
-                             const char *PenjualanMobilID,
+bool DbPenjualanAksesoris_Update(void *dbcVoid,
+                             const char *PenjualanAksesorisID,
                              const char *NoTransaksi,
-                             const char *MobilID,
+                             const char *AksesorisID,
                              const char *KasirID,
                              const char *SalesID,
                              const char *PelangganID,
@@ -54,7 +54,7 @@ bool DbPenjualanMobil_Update(void *dbcVoid,
                              const char *Total,
                              const char *Uang);
 
-bool DbPenjualanMobil_Delete(void *dbcVoid,
-                             const char *PenjualanMobilID);
+bool DbPenjualanAksesoris_Delete(void *dbcVoid,
+                             const char *PenjualanAksesorisID);
 
 #endif

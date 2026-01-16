@@ -9,6 +9,11 @@
 bool DBCheckLogin(SQLHDBC *conn,
                   const char *username,
                   const char *password,
-                  Role *outRole);
+                  Role *outRole,
+                  char *outKaryawanID,
+                  int outKaryawanIDSize,
+                  char *outNama,
+                  int outNamaSize);
+
 
 #endif

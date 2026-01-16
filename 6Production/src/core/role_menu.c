@@ -1,5 +1,4 @@
- 
- #include "role_menu.h"
+#include "role_menu.h"
 #include "ui.h"
 
 bool IsCashierPage(Halaman h) {

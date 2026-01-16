@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <windows.h>
 #include <sql.h>
 #include <sqlext.h>
 
